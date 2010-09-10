@@ -5,12 +5,11 @@ String removed = "";
 
 import java.awt.*;
 
-boolean PRESETUP
-= false;
+boolean PRESETUP = false;
 int WHAT_DO_YOU_WANT = -1;
 boolean singleFramePdf = false;
 
-public ClusterSimulation(){
+public ClusterSimulation(){  
   doCommandLine();
   if (singleFramePdf){
     PRESETUP = true;
@@ -72,6 +71,7 @@ public ClusterSimulation(){
   }
 }
 void setup(){
+  
   //Test here if we have write priviledges
   String test = sketchPath+File.separator+".test";
   try {

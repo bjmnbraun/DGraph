@@ -12,6 +12,9 @@ void getCoordsFile(float[][] coords, String file){
     coords[k][1]/=PIX_TO_PD_FACTOR;
   }
 }
+/**
+An algorithm that rotates / flips an input set (toModify) of 2D points to best match another set (best), using tmpMem as a required midway buffer. 
+**/
 void rotateToBest(float[][] best, float[][] toModify, float[][] tmpMem, String outFile, PrintWriter dbg){
   float bestMag = Float.MAX_VALUE;
   int needsAFlip = 0;
@@ -56,6 +59,11 @@ void rotateInto(float[][] one, float[][] dst, float theta){
     dst[k][1] = -st*one[k][0]+ct*one[k][1];
   }
 }
+/**
+Calculates the best rotation to fit one onto two. Note that each point of one is calculated as being the 'partner' of the corresponding indexed point in two. 
+A more complex algorithm could be developed that rotates generalized point cloud A onto generalized point cloud B, by somehow choosing the partners on the fly. Here, we know which points
+correspond (they are data points).
+**/
 float calcBestRotation(float[][] one, float[][] two){
   float[] q = new float[4];
   for(int k = 0; k < one.length; k++){

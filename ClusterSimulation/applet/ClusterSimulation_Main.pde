@@ -1,4 +1,5 @@
 private String toRead = null;
+private String scoreName = "";
 String pickUserFile(String title){
   FileDialog fd = new FileDialog(frame, title, FileDialog.LOAD);
   fd.show();
@@ -67,6 +68,12 @@ void reinit(){
   removed = "";
   if(!iS) noLoop();
   long lastDraw = System.nanoTime();
+  if (distanceMatrix==null){
+    scoreName = "PD";
+  } 
+  else {
+    scoreName = JOptionPane.showInputDialog(frame,"Enter the name of your custom score function");
+  }
   for(int k = 0; k < nodes.length; k++){
     nodes[k] = new Node();
     nodes[k].FastaLabel = fastaInfo[0][k];
@@ -125,13 +132,6 @@ void reinit(){
       g.beginDraw();
     }
   }
-  //Line caches:
-  if (lineRendering==null || lineRendering.length!=nodes.length*nodes.length){
-    lineRendering = new LineSort[nodes.length*nodes.length];
-    for(int k = 0; k < lineRendering.length; k++){
-      lineRendering[k] = new LineSort();
-    }
-  }
   //Phew.
   if(!iS) {
     loop();
@@ -187,15 +187,10 @@ int simulationTicks;
 PGraphics textPaneClone;
 
 private boolean UPDATES_ON_DRAW = true; //Normally true, but set to false on the first frame in the GUI.
+private boolean wantsFrameBreak = false;
 private boolean simStarted = false;
 void UpdateSimulation(boolean controlInfo){
-  if(keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='y'){
-    simStarted = !simStarted;
-    keyPressed = false;
-    keyEvent = null;
-  }
   UPDATES_ON_DRAW = simStarted; //GUI uses this so the user can just look at it for a second.
-  simulationTicks++;
   underMouse = "";
   background(255);
   if (showLabels){
@@ -232,6 +227,8 @@ void UpdateSimulation(boolean controlInfo){
     text("'w' increases dot-size",width-5,height-fromBottomRight+115);
     text("'q' decreases dot-size",width-5,height-fromBottomRight+125);
     text("'r' or 'e' re-run the simulation. 'e' only scatters the points, 'r' does more.",width-5,height-fromBottomRight+135);
+  }
+  if (true){
     if (transparentCountdown>0){
       textSize(12);
       nodes[0].setStroke(8,0);
@@ -247,21 +244,21 @@ void UpdateSimulation(boolean controlInfo){
     else {
       textSize(12);
       textAlign(LEFT,CENTER);
-      text("PD SCORE - DISTANCE",20,130);
-      noFill();
-      beginShape(QUAD_STRIP);
+      text(scoreName+" SCORE - DISTANCE",20,130);
+      beginShape(QUADS);
       float minY = 150;
       float maxY = 400;
       for(int PD = 0; PD <= SHOW_LINES; PD++){
         float mag = PD/SHOW_LINES;
         float y = lerp(minY,maxY,mag);
+        strokeColors(PD);
+        fill(g.strokeColor);
         if (PD>0){
           vertex(20,y);
           vertex(25,y);
         }
-        strokeColors(PD);
-        vertex(20,y);
         vertex(25,y);
+        vertex(20,y);
       }
       endShape();
       fill(0);
@@ -273,53 +270,8 @@ void UpdateSimulation(boolean controlInfo){
     }
   }
   //Draw simulation:
-  if (keyPressed){
-    boolean isApressed = Character.toLowerCase(keyEvent.getKeyChar())=='a';
-    if (Character.toLowerCase(keyEvent.getKeyChar())=='s' || isApressed){
-      if (System.nanoTime()-lastToggleShowLabels>.5e9){
-        showLabels = !showLabels;
-        lastToggleShowLabels = System.nanoTime();
-      }
-    }
-    if (isApressed){
-      showRealLabels = true;
-    }
-  }
-  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='h'){
-    if (System.nanoTime()-lastToggleShowLines>.5e9){
-      ShowMinLines = !ShowMinLines;
-      lastToggleShowLines = System.nanoTime();
-    }
-  }
-  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='w'){
-    if (System.nanoTime()-lastChangeNodeDotSize>.5e9){
-      NodeDotSize=min(NodeDotSize+1,10);
-      lastChangeNodeDotSize = System.nanoTime();
-    }
-  }
-  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='q'){
-    if (System.nanoTime()-lastChangeNodeDotSize>.5e9){
-      NodeDotSize=max(NodeDotSize-1,2);
-      lastChangeNodeDotSize = System.nanoTime();
-    }
-  }
-  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='0'){
-    VIEW_SCALE_USER--;
-    VIEW_SCALE_USER = max(VIEW_SCALE_USER,1);
-    keyPressed = false;
-    keyEvent = null;
-  }
-  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='9'){
-    VIEW_SCALE_USER++;
-    keyPressed = false;
-    keyEvent = null;
-  }
   VIEW_SCALE = 40f/VIEW_SCALE_USER;
-  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='j'){
-    newPhysicsVariables();
-    keyPressed = false;
-    keyEvent = null;
-  }
+  //keyPressed2();
   //pushMatrix();
   textPaneClone.pushMatrix();
   textPaneClone.translate(width/2,height/2);
@@ -327,7 +279,7 @@ void UpdateSimulation(boolean controlInfo){
   //The actual simulation:
   runActualSimulation();
   //End actual simulation.
-  flushLines();
+   flushLines();
   if (RANDOM_VARIANCE<0){
     RANDOM_VARIANCE = TOTAL_VARIANCE;
   }
@@ -337,9 +289,38 @@ void UpdateSimulation(boolean controlInfo){
   for(int k = 0; k < nodes.length; k++){
     nodes[k].drawDot();
   }
+  wantsFrameBreak = false;
   //popMatrix();
   textPaneClone.popMatrix();
   //image(textPaneClone,0,0,width,height,0,0,width,height);
+  transparentCountdown--;
+  fill(0);
+  textSize(12);
+  textAlign(LEFT,BOTTOM);
+  translate(-width/2,-height/2);
+  if (controlInfo){
+    text("Simulation ticks:"+simulationTicks+"\nSolution \'goodness\':"+TOTAL_VARIANCE+"\nTimes smaller than random:"+RANDOM_VARIANCE/TOTAL_VARIANCE+"\nNodes under mouse:"+underMouse.substring(min(underMouse.length(),2)),0,height-200,min(300,width-100),200);
+    stroke(0);
+    if (false && simulationTicks==200){
+      System.out.printf("%-7.3f %-7.3f %-7.3f %-14.3f",timeStep,fluidFriction,mass,TOTAL_VARIANCE);
+      System.out.println();
+    }
+  }
+}
+public void keyPressed(KeyEvent e){    
+  //  super.keyPressed(e);
+  System.out.println("Breaking..."+System.nanoTime());
+  keyPressed = true;
+  keyEvent = e;
+  wantsFrameBreak = true;
+  keyPressed2();
+}
+public void keyPressed2(){
+  if(keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='y'){
+    simStarted = !simStarted;
+    keyPressed = false;
+    keyEvent = null;
+  }
   if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='d'){
     boolean canDo = JOptionPane.showConfirmDialog(frame,"Disable all nodes under your mouse? This cannot be undone.")==JOptionPane.OK_OPTION;
     String[] nums = underMouse.split("[, ]+");
@@ -374,19 +355,6 @@ void UpdateSimulation(boolean controlInfo){
     keyPressed = false;
     keyEvent = null;
   }
-  transparentCountdown--;
-  fill(0);
-  textSize(12);
-  textAlign(LEFT,BOTTOM);
-  translate(-width/2,-height/2);
-  if (controlInfo){
-    text("Simulation ticks:"+simulationTicks+"\nSolution \'goodness\':"+TOTAL_VARIANCE+"\nTimes smaller than random:"+RANDOM_VARIANCE/TOTAL_VARIANCE+"\nNodes under mouse:"+underMouse.substring(min(underMouse.length(),2)),0,height-200,min(300,width-100),200);
-    stroke(0);
-    if (false && simulationTicks==200){
-      System.out.printf("%-7.3f %-7.3f %-7.3f %-14.3f",timeStep,fluidFriction,mass,TOTAL_VARIANCE);
-      System.out.println();
-    }
-  }
   if (frame!=null && keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='c'){
     save("Screenshots/"+(int)SHOW_LINES+"-"+frameCount+".png");
     SHOW_LINES--;
@@ -398,9 +366,60 @@ void UpdateSimulation(boolean controlInfo){
     keyPressed = false;
     keyEvent = null;
   }
+  if (keyPressed){
+    boolean isApressed = Character.toLowerCase(keyEvent.getKeyChar())=='a';
+    if (Character.toLowerCase(keyEvent.getKeyChar())=='s' || isApressed){
+      if (System.nanoTime()-lastToggleShowLabels>.5e9){
+        showLabels = !showLabels;
+        lastToggleShowLabels = System.nanoTime();
+      }
+    }
+    if (isApressed){
+      showRealLabels = true;
+    }
+  }
+  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='h'){
+    if (System.nanoTime()-lastToggleShowLines>.5e9){
+      ShowMinLines = !ShowMinLines;
+      lastToggleShowLines = System.nanoTime();
+    }
+  }
+  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='w'){
+    if (System.nanoTime()-lastChangeNodeDotSize>.5e9){
+      NodeDotSize=min(NodeDotSize+1,10);
+      lastChangeNodeDotSize = System.nanoTime();
+    }
+  }
+  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='q'){
+    if (System.nanoTime()-lastChangeNodeDotSize>.5e9){
+      NodeDotSize=max(NodeDotSize-1,2);
+      lastChangeNodeDotSize = System.nanoTime();
+    }
+  }
+  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='0'){
+    VIEW_SCALE_USER--;
+    VIEW_SCALE_USER = max(VIEW_SCALE_USER,1);
+  }
+  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='9'){
+    VIEW_SCALE_USER++;
+  }
+  if (keyPressed && Character.toLowerCase(keyEvent.getKeyChar())=='j'){
+    newPhysicsVariables();
+    keyPressed = false;
+    keyEvent = null;
+  }
 }
 public void runActualSimulation(){
   TOTAL_VARIANCE = 0; //Calculate
+  if (UPDATES_ON_DRAW){
+    simulationTicks++;
+  }
+  if (lineRendering==null || lineRendering.length < nodes.length*nodes.length){
+    lineRendering = new LineSort[nodes.length*nodes.length];
+    for(int k = 0; k < lineRendering.length; k++){
+      lineRendering[k] = new LineSort();
+    }
+  }
   for(int k = 0; k < nodes.length; k++){
     nodes[k].update();
   }
@@ -419,7 +438,6 @@ public void runActualSimulation(){
     nodes[k].pos[1] -= averagePos[1];
   }
 }
-LineSort[] lineRendering = null;
 public class LineSort implements Comparable {
   public float myz;
   float[] myLine = new float[4];
@@ -430,17 +448,20 @@ public class LineSort implements Comparable {
   }
 }
 int lineRenderingUsed = 0;
+private LineSort[] lineRendering;
 void flushLines(){
-  Arrays.sort(lineRendering,0,lineRenderingUsed);
   strokeWeight(1);
-  for(int k = 0; k < lineRendering.length; k++){
-    LineSort ls = lineRendering[k];
-    if (ls.dead) break;
-    ls.dead = true;
-    float[] dat = ls.myLine;
-    stroke(ls.strokeColor);
-    line(dat[0],dat[1],dat[2],dat[3]);
-  }
+  
+  Arrays.sort(lineRendering,0,lineRenderingUsed);
+  for(int k = 0; k < lineRenderingUsed; k++){
+   LineSort ls = lineRendering[k];
+   if (ls.dead) break;
+   ls.dead = true;
+   float[] dat = ls.myLine;
+   stroke(ls.strokeColor);
+   line(dat[0],dat[1],dat[2],dat[3]);
+   }
+   
   lineRenderingUsed = 0;
 }
 int transparentCountdown = 0;
@@ -472,9 +493,9 @@ abstract class VarSetter extends JPanel {
 }
 class PhysicsSetter extends VarSetter {
   String[] names = new String[]{
-    "Delta T","Fluid Friction","Mass"                                                      };
+    "Delta T","Fluid Friction","Mass"                                                              };
   String[] initValues = new String[]{
-    timeStep+"",fluidFriction+"",mass+""                                                      };
+    timeStep+"",fluidFriction+"",mass+""                                                              };
   public PhysicsSetter(){
     super(3);
     setLayout(new GridLayout(numSettings,1));
@@ -499,9 +520,9 @@ class PhysicsSetter extends VarSetter {
 }
 class DistanceSetter extends VarSetter {
   String[] names = new String[]{
-    "Comparison Cutoff","Display Lines < than","Island Removal Cutoff"        };
+    "Comparison Cutoff","Display Lines < than","Island Removal Cutoff"                };
   String[] initValues = new String[]{
-    CURRENT_CUTOFF+"",SHOW_LINES+"",REMOVAL_ISLAND_FINDER+""        };
+    CURRENT_CUTOFF+"",SHOW_LINES+"",REMOVAL_ISLAND_FINDER+""                };
   public DistanceSetter(){
     super(3);
     setLayout(new GridLayout(numSettings,1));
@@ -560,10 +581,12 @@ class Node {
     if (showLabels){
       if (showRealLabels){
         placeText(FastaSequence,x,y);
-      } else {
+      } 
+      else {
         placeText(myId+1+"",x,y);
       }
     }
+    flush();
   }
   void drawDot(){
     if (!exists){
@@ -576,7 +599,8 @@ class Node {
       fill(shadeColor);
       stroke(shadeColor);
       shadeColor = -1;
-    } else {
+    } 
+    else {
       stroke(0);
       fill(255);
     }
@@ -585,6 +609,7 @@ class Node {
       nodeConnection = -1;
     }
     rect(x-1,y-1,NodeDotSize,NodeDotSize);
+    flush();
   }
   void placeText(String stuff, float offx, float offy){
     float cx=0, cy=0;
@@ -710,24 +735,22 @@ class Node {
     stroke(200+goodness/SHOW_LINES*50,255,255);
     colorMode(RGB,255);
   }
+  boolean drawsLines(){
+    return (transparentCountdown>0 || ShowMinLines) && !wantsFrameBreak;
+  }
   void drawLineTo(int oth, float goodness){
     //called by update, but if we're in script, don't do it!
     if (iS) return;
     //Done.
     boolean trans = transparentCountdown>0;
-    if (!trans && distances[oth]<SHOW_LINES){
-      strokeWeight(2);
-      if (ShowMinLines){
-        strokeColors(distances[oth]);      
-      } 
-      else {
+    if (!trans){
+      if(ShowMinLines && distances[oth]<SHOW_LINES){
+          strokeWeight(2);
+          strokeColors(distances[oth]);      
+      } else {
         return;
       }
-    } 
-    else {
-      if (!trans){ 
-        return;
-      }
+    } else {
       setStroke(goodness,distances[oth]);
     }
 
@@ -741,17 +764,23 @@ class Node {
     float ay = other.pos[1]*VIEW_SCALE;
     float z = -distances[oth]/(float)SHOW_LINES*8;
 
+    
     if (lineRenderingUsed<lineRendering.length){
-      LineSort ls = lineRendering[lineRenderingUsed];
-      ls.strokeColor = g.strokeColor;
-      ls.myLine[0]=x;
-      ls.myLine[1]=y;
-      ls.myLine[2]=ax;
-      ls.myLine[3]=ay;
-      ls.myz = z;
-      ls.dead = false;
-      lineRenderingUsed++;
-    }
+     LineSort ls = lineRendering[lineRenderingUsed];
+     ls.strokeColor = g.strokeColor;
+     ls.myLine[0]=x;
+     ls.myLine[1]=y;
+     ls.myLine[2]=ax;
+     ls.myLine[3]=ay;
+     ls.myz = z;
+     ls.dead = false;
+     lineRenderingUsed++;
+     }
+     
+    /*
+    line(x,y,ax,ay);
+    flush();
+    */
     colorMode(RGB,255);
   }
   void update(){
@@ -765,7 +794,7 @@ class Node {
     if(mousePressed){
       if (selected==myId){
         float[] disp = componentsTo(new float[]{
-          (mouseX-width/2)/VIEW_SCALE,(mouseY-height/2)/VIEW_SCALE                                                                                                                                                                                                                                                                                                                        }
+          (mouseX-width/2)/VIEW_SCALE,(mouseY-height/2)/VIEW_SCALE                                                                                                                                                                                                                                                                                                                                                        }
         );
         addVec(pos,disp);
         selected = -1;
@@ -780,6 +809,11 @@ class Node {
       }
     }
 
+    if (!UPDATES_ON_DRAW&&!drawsLines()){
+      return;
+    }
+
+
     //Update position:
     float[] dispAdd = dispAddMemorySaver; //Sigma holder
     dispAdd[0] = 0;
@@ -787,8 +821,9 @@ class Node {
     acc[0] = 0; 
     acc[1] = 0; //Acceleration calculation follows:
     for(int k = 0; k < distances.length; k++){
-      if (k==myId)
+      if (k==myId){
         continue;
+      }
       if (!nodes[k].exists){
         continue;
       }
@@ -797,28 +832,32 @@ class Node {
       float dispar;
       float proximity = (compLength*(ZOOM/640.)); //pixel to pd
       if (distances[k]>CURRENT_CUTOFF){
+        if (true) continue;
         dispar = 0;
         //If close proximity, move away.
+        /*
         if (proximity < CURRENT_CUTOFF/2){
-          dispar = .5;
-        }
+         dispar = .5;
+         }
+         */
       } 
       else {
         //Method 1
-        float rawDispar = (distances[k]-proximity);
-        dispar = rawDispar;/// (distances[k]+1);
+        dispar = (distances[k]-proximity);/// (distances[k]+1);
         TOTAL_VARIANCE += dispar*dispar; //Unweighted.
 
         //Draw the line:
-        drawLineTo(k,rawDispar);
+        drawLineTo(k,dispar);
       }
       //Weight for distance:
       //dispar /= (1+distances[k]);      
       //dispar = (exp(dispar-distances[k])-1.)/640.;
 
       if (proximity < 1e-5){ //divide by zero catch
-        dispAdd[0] = dispar*1e-2;
-        dispAdd[1] = dispar*1e-2;
+        dispAdd[0] = -dispar*1e-2;
+        dispAdd[1] = -dispar*1e-2;
+        //dispAdd[0] = dispar*1e-2;
+        //dispAdd[1] = dispar*1e-2;
       } 
       else {
         dispAdd[0] = -dispar*(comp[0])/proximity;
@@ -834,6 +873,7 @@ class Node {
     //Ok, move the particle, only if we're updating:
 
     if (UPDATES_ON_DRAW){
+
       addVec(vel,acc[0]*timeStep,acc[1]*timeStep); 
       addVec(pos,vel[0]*timeStep,vel[1]*timeStep);
       float mag = sqrt(pos[0]*pos[0]+pos[1]*pos[1]);
@@ -858,6 +898,10 @@ void addVec(float[] a, float b1, float b2){
   a[0]+=b1;
   a[1]+=b2;
 }
+
+
+
+
 
 
 

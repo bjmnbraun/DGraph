@@ -70,7 +70,7 @@ void TestFasta(int mode){
       pdScoreMat(lines);
       return;
     }
-    
+
     if (mode==7){
       seqSimScore(lines);
       return;
@@ -311,26 +311,112 @@ void saveNodeStates(String outputFile){
 
 void GetCustomDistances(String customLoc){
   try {
-    Scanner input = new Scanner(openStream(customLoc));
-    int lineNum = 0;    
-    while(input.hasNextLine()){
-      input.nextLine(); 
-      lineNum++;
-    }
-    input.close();
-    input = new Scanner(openStream(customLoc));
-    distanceMatrix = new float[lineNum][lineNum];
-    for(int k = 0; k < lineNum; k++){
-      String[] thisLine = input.nextLine().split("\\s+");
-      for(int p = 0; p < lineNum; p++){
-        distanceMatrix[k][p]=float(thisLine[p]);
+    /*
+    Scanner input = new Scanner(new BufferedInputStream(openStream(customLoc),262144));
+     int lineNum = 0;    
+     while(input.hasNextLine()){
+     input.nextLine(); 
+     lineNum++;
+     }
+     input.close();
+     System.out.println("Second pass through custom matrix...");
+     input = new Scanner(new BufferedInputStream(openStream(customLoc),262144));
+     distanceMatrix = new float[lineNum][lineNum];
+     for(int k = 0; k < lineNum; k++){
+     //String[] thisLine = input.nextLine().split("\\s+");
+     for(int p = 0; p < lineNum; p++){
+     distanceMatrix[k][p]=new Float(input.next());
+     }
+     input.nextLine();
+     }
+     input.close();
+     */
+    byte[] buffer = new byte[0x40000]; //256kb at a time
+    for(int actuallyFillBuffer = 0; actuallyFillBuffer < 2; actuallyFillBuffer++){
+      InputStream is = openStream(customLoc);
+      try { 
+        int read = -1;
+        int lineNum = 0;
+        boolean fillBuffer = actuallyFillBuffer==1;
+        int linex = 0;
+        boolean stillInLineReturn = false;
+        String leftOver = "";
+        while((read=is.read(buffer))!=-1){
+          String k = leftOver+new String(buffer,0,read);
+          int kLenNoTail = -1;
+          int y = 0;
+          for(y = k.length()-1; y >=0; y--){
+            if(Character.isWhitespace(k.charAt(y))){
+              kLenNoTail = y+1;
+              break;
+            }
+          }
+          for(y = 0; y < kLenNoTail; y++){
+            if (isLineEndChar(k.charAt(y))){
+              if (stillInLineReturn){
+                continue;
+              }
+              stillInLineReturn = true;
+              if (fillBuffer&&lineNum>0&&linex < distanceMatrix.length){
+                throw new RuntimeException("Assertion error: not square matrix.");
+              }
+              linex = 0;
+              lineNum++;
+              while ((y+1<kLenNoTail)&&isLineEndChar(k.charAt(y+1))){
+                y++;             
+              }
+            } 
+            else {
+              stillInLineReturn = false;
+              if (fillBuffer){
+                //Parse float.
+                if (!Character.isWhitespace(k.charAt(y))){
+                  int begin = y;
+                  int end = y;
+                  while ((y+1<kLenNoTail)&&!Character.isWhitespace(k.charAt(y+1))){
+                    y++;        
+                    end = y;
+                  }
+                  distanceMatrix[lineNum][linex++] = new Float(k.substring(begin,end+1));
+                  /*
+                  if (distanceMatrix[lineNum][linex-1]==0){
+                    //System.out.println("Zero"+" "+begin+" "+(end+1));
+                    if (lineNum!=linex-1){
+                      System.out.println("Bad!"+" "+lineNum+" "+(linex-1));
+                    }
+                  }
+                  */
+/*      
+                  if (linex == 1){
+                    System.out.println(lineNum+" "+distanceMatrix[lineNum][0]);
+                  }
+*/              
+                }
+              }  
+            }
+          }
+          leftOver = k.substring(kLenNoTail,k.length());
+        }
+        if (!fillBuffer){
+          System.out.println(lineNum);
+          distanceMatrix = new float[lineNum][lineNum];
+          lineNum = 0;
+        }
+      } 
+      finally {
+        is.close();
       }
     }
-    input.close();
   } 
   catch (Throwable e){
     e.printStackTrace();
   }
+}
+private static boolean isLineEndChar(char c){
+  if (c > '\r'){
+    return false;
+  }
+  return c=='\n'||c=='\r';
 }
 void pdScore2Mat(String[] lines){
   int wSize = -1;
@@ -366,7 +452,7 @@ void seqSimScore(String[] lines){
   ArrayList unFasta = new ArrayList();
   ArrayList headers = new ArrayList();
   unFasta0(unFasta,headers,lines);
-  
+
   for(int k = 0; k < unFasta.size(); k++){
     for(int p = 0; p < unFasta.size(); p++){
       System.out.printf("%.3f ",seqSimDist((String)unFasta.get(k),(String)unFasta.get(p)));   
@@ -379,7 +465,7 @@ float seqSimDist(String a, String b){
   float diff = 0;
   for(int k = 0; k < a.length(); k++){
     if (k >= b.length() || a.charAt(k)!=b.charAt(k)){
-        diff++;
+      diff++;
     }
   }
   return diff / sqrt(a.length()*a.length()+b.length()*b.length()) * 25;
@@ -433,6 +519,11 @@ void pdScoreMultisearch(String[] lines){
   }
 
 }
+
+
+
+
+
 
 
 
