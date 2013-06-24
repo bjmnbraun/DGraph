@@ -64,7 +64,7 @@ void DrawShaded(){
   }
   for(int k = 0; k < nodes.length; k++){
     if (!nodes[k].exists) continue;
-    nodes[k].shadeColor = lerpColor(color(0,0,0),color(255,0,0),shadings[k]); //erased after 1 use, by the way.
+    nodes[k].shadeColor = lerpColor(color(0,0,0),color(255,0,0),constrain(shadings[k],0,1)); //erased after 1 use, by the way.
     nodes[k].nodeConnection = nodeConnections[k];
   }
   //Superdraw:
@@ -80,6 +80,7 @@ void DrawShaded(){
   fill(0);
   textAlign(LEFT,TOP);
   text("Press any key to return.",0,0);
+  
   if (keyPressed && (System.nanoTime()-gotHere)>.5e9){
     WHICH_SCREEN = 1;
     shadings = null;

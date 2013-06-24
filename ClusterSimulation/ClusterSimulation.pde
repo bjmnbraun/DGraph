@@ -1,4 +1,7 @@
 import processing.pdf.*;
+import java.io.*;
+import java.awt.event.*;
+
 
 String removed = "";
 
@@ -107,7 +110,7 @@ void draw(){
   if (WHICH_SCREEN == 1){
     frame.setTitle("ClusterSimulation: dGraph copyright Ben Braun, 2009");
     UpdateSimulation(true);
-    if (keyPressed && keyEvent.getKeyChar()=='p'){
+    if (keyPressed && key=='p'){
       WHICH_SCREEN++;
     }
   } 

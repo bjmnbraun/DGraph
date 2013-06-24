@@ -1,8 +1,0 @@
-JRat:INFO (Aug/27 14:57:11,187) (main) RuntimeContextImpl - logfile created
-JRat:INFO (Aug/27 14:57:11,188) (main) RuntimeContextImpl - Running JRat version 1-beta1 - built on 20070911
-JRat:INFO (Aug/27 14:57:11,189) (main) CacheMethodHandlerFactory - startup
-JRat:INFO (Aug/27 14:57:11,190) (main) ConfigMethodHandlerFactory - startup
-JRat:INFO (Aug/27 14:57:11,191) (main) ShutdownRegistry - registerShutdownListener Tree Handler Factory
-JRat:INFO (Aug/27 14:57:11,196) (main) CommandletRegistry - register org.shiftone.jrat.provider.tree.command.ResetCommandlet@1a1c887
-JRat:INFO (Aug/27 14:57:11,199) (main) CommandletRegistry - register org.shiftone.jrat.provider.tree.command.WriteOutputCommandlet@e7b241
-JRat:INFO (Aug/27 14:57:11,202) (main) CommandletRegistry - register org.shiftone.jrat.provider.tree.command.DumpOutputCommandlet@e83912

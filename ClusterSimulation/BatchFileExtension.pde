@@ -103,7 +103,6 @@ private void runScript(int numTimes, int numIters, String params1, String output
 
   if (pdfOutput){
     pdfUrl = outputDir.toString()+File.separator+filePrefix+".pdf";
-    showLabels = true;
     singleFramePdf = true;
     return;
   }
