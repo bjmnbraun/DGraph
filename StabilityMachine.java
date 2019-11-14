@@ -85,7 +85,3 @@ float sumDeviant(float[][] one, float[][] two){
   }
   return toRet;
 }
-
-
-
-

@@ -86,8 +86,3 @@ void DrawShaded(){
     shadings = null;
   }
 }
-
-
-
-
-

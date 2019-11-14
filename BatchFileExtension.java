@@ -204,13 +204,3 @@ private void doHelp(){
   System.out.printf(formatString,"-Dzoom","Zooming factor. Lower numbers means more zoomed in. Must be >=1.");
   System.out.println();
 }
-
-
-
-
-
-
-
-
-
-

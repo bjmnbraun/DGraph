@@ -106,4 +106,3 @@ float PDScore2(String a, String b, int wSize){
   }
   return 20* sqrt( 1 - (matches / (float) (a.length()-wSize)));
 }
-

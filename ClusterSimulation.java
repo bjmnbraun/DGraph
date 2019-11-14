@@ -92,7 +92,6 @@ void setup(){
       frame.setResizable(true);
     }
     size(800,800,P2D);
-    txt = createFont("Dialog",30,true);
   } 
   else {
     TestFasta(WHAT_DO_YOU_WANT);
@@ -130,15 +129,3 @@ void draw(){
     }
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
