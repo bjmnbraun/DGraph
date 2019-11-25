@@ -1,27 +1,31 @@
-import processing.core.*; 
-import processing.data.*; 
-import processing.event.*; 
-//import processing.opengl.*; 
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.FileDialog;
+import java.awt.Frame;
+import java.awt.GridLayout;
+import java.awt.Toolkit;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.TreeSet;
 
-import processing.pdf.*; 
-import java.io.*; 
-import java.awt.event.*; 
-import java.awt.*; 
-import javax.swing.*; 
-import java.awt.event.*; 
-import java.util.*; 
-import javax.swing.JFileChooser; 
-import java.util.TreeSet; 
-import javax.swing.JOptionPane; 
+import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.JTextArea;
 
-import java.util.HashMap; 
-import java.util.ArrayList; 
-import java.io.File; 
-import java.io.BufferedReader; 
-import java.io.PrintWriter; 
-import java.io.InputStream; 
-import java.io.OutputStream; 
-import java.io.IOException; 
+import processing.core.PApplet;
+import processing.core.PFont; 
 
 public class ClusterSimulation extends PApplet {
 String removed = "";
@@ -30,7 +34,7 @@ boolean PRESETUP = false;
 int WHAT_DO_YOU_WANT = -1;
 boolean singleFramePdf = false;
 
-public void settings() {
+public void setup() {
 	  doCommandLine();
 	  if (singleFramePdf){
 	    PRESETUP = true;
@@ -40,16 +44,16 @@ public void settings() {
 	    PRESETUP = true;
 	    //Show a dialog with options of what to do:
 	    String [] optionsStr = { 
-	      "The Simulation Major < YOU PROBABLY WANT THIS!", 
+	      "Run DGraph", 
 	      "Utility: Sequence list -> Fasta Format", 
 	      "Utility: Fasta Format -> Sequence List", 
 	      "Utility: Remove Duplicates from Sequence List", 
 	      "Utility: Fasta Format -> List of 'Fasta Headers'",
-	      "Utility: Clustalw output -> 'distance' matrix (experimental!)",
+	      "Utility: Clustalw output -> Alignment score distance matrix",
 	      "Utility: Sequence List -> Neo-PD Score Matrix (Long Proteins)",
 	      "Utility: Sequence List -> PD Score Matrix (Short Peptide)",
-	      "Utility: DNA Fasta -> Similarity Score Matrix",
-	      "Multisearch: Choose from a list peptides similar to any in another list",
+	      "Utility: DNA Fasta -> DNA Sequence Similarity matrix",
+	      "Utility: Find all pairs of peptide in a list with PD Score under a threshold",
 	      };
 	    JRadioButton [] options = new JRadioButton[optionsStr.length];
 	    ButtonGroup group = new ButtonGroup();
@@ -73,11 +77,15 @@ public void settings() {
 	    };
 	    holder.requestFocus();
 
-	    JOptionPane.showMessageDialog(
+	    boolean shouldRun = JOptionPane.showOptionDialog(
 	    holder,
 	    pane,
 	    "Welcome! What would you like to run?",
-	    JOptionPane.INFORMATION_MESSAGE,null);
+	    JOptionPane.OK_CANCEL_OPTION,
+	    JOptionPane.PLAIN_MESSAGE,null,null,null) == JOptionPane.OK_OPTION;
+	    if (!shouldRun) {
+	    	System.exit(0);
+	    }
 
 	    holder.setVisible(false);
 
@@ -92,7 +100,7 @@ public void settings() {
 	  }
 	  
 	  //Test here if we have write priviledges
-	  String test = sketchPath()+File.separator+".test";
+	  String test = sketchPath+File.separator+".test";
 	  try {
 	    FileOutputStream fos = new FileOutputStream(test);
 	    fos.write(2);
@@ -108,14 +116,9 @@ public void settings() {
 	  } 
 	  else {
 	    TestFasta(WHAT_DO_YOU_WANT);
-	    exit();
+	    System.exit(0);
 	  }
-}
-public void setup(){
-    if (!frame.isResizable()){
-      frame.setResizable(true);
-    }
-    txt = createFont("Vera.ttf",30,true);
+    txt = createFont("Vera.ttf",90,true);
     //textPaneClone = createGraphics(2048,2048,P2D);
     //textPaneClone = createGraphics(width,height,P2D);
     //beginDraw - endDraw need to be tight.
@@ -126,6 +129,9 @@ public void setup(){
 
 int WHICH_SCREEN = 0;
 public void draw(){
+    if (!frame.isResizable()){
+      frame.setResizable(true);
+    }
 	if (WHICH_SCREEN == 1){
 		drawSimulation(true);
 		if (keyPressed && key=='p'){
@@ -171,6 +177,7 @@ public void setupShaded() {
 	if (singleFramePdf){
 		commands = new String[0];
 	}
+	if (true) throw new RuntimeException();
 	if (commands==null){
 		FileDialog fd = new FileDialog(frame, "Open the coloring file", FileDialog.LOAD);
 		//while ( fd.getDirectory() == null && fd.getFile() == null) 
@@ -180,7 +187,7 @@ public void setupShaded() {
 		try {
 			outputPdfDir = fd.getDirectory().toString();
 			File got = new File( fd.getDirectory() + File.separator + fd.getFile());
-			toRead = got.getAbsoluteFile().toURI().toURL().toString();
+			toRead = got.getAbsoluteFile().toString();
 		} 
 		catch (Throwable e){
 			JOptionPane.showMessageDialog(frame,"Incorrect file format");
@@ -239,7 +246,7 @@ public void drawShaded(){
 		}
 	}
 	textFont(txt);
-	textSize(12);
+	textSize(txtFontSizeMedium * txtFontSizeScaling);
 	fill(0);
 	textAlign(LEFT,TOP);
 	text("Press any key to return.",0,0);
@@ -476,7 +483,7 @@ public String pickUserFile(String title) {
         JOptionPane.showMessageDialog(frame, "You entered a nonexistant file:\n"+got);
         return pickUserFile(title);
       }
-      return got.getAbsoluteFile()/*.toURI().toURL()*/.toString();
+      return got.getAbsoluteFile().toString();
     } 
     catch (Throwable e) {
       e.printStackTrace();
@@ -592,7 +599,7 @@ public void setupSimulation() {
       fill(255);
       textFont(txt);
       textAlign(LEFT, TOP);
-      textSize(30);
+      textSize(txtFontSizeMedium * txtFontSizeScaling);
       text("Calculating PDscores:"+nf((k/(float)nodes.length)*100, 0, 2)+"%", 5, 5);
       g.endDraw();
       //repaint();
@@ -664,7 +671,7 @@ public void drawSimulation(boolean controlInfo) {
   underMouse = "";
   background(255);
   textFont(txt);
-  textSize(20);
+  textSize(txtFontSizeMedium * txtFontSizeScaling);
   noStroke();
   fill(0);
   if (controlInfo) {
@@ -678,7 +685,6 @@ public void drawSimulation(boolean controlInfo) {
       text("Simulation stopped. Press 'y' to start again.", width, 0);
     }
     fill(0);
-    textSize(14);
     int fromBottomRight = 150;
     text("'h' to switch on/off lines", width-5, height-fromBottomRight-33);
     text("'c' to turn off labels", width-5, height-fromBottomRight-20);
@@ -687,19 +693,16 @@ public void drawSimulation(boolean controlInfo) {
     text("'b' to show sequence headers", width-5, height-fromBottomRight+18);
     text("'9' zooms out", width-5, height-fromBottomRight+35);
     text("'0' zooms in", width-5, height-fromBottomRight+45);
-    textSize(16);
     text("'m' saves the current state", width-5, height-fromBottomRight+55);
     text("'p' proceeds to the analysis step", width-5, height-fromBottomRight+72);
     text("'j' sets the physics options", width-5, height-fromBottomRight+85);
     text("'d' disable nodes", width-5, height-fromBottomRight+100);
-    textSize(12);
     text("'w' increases dot-size", width-5, height-fromBottomRight+115);
     text("'q' decreases dot-size", width-5, height-fromBottomRight+125);
     text("'r' or 'e' re-run the simulation. 'e' only scatters the points, 'r' does more.", width-5, height-fromBottomRight+135);
   }
   if (true) {
     if (transparentCountdown>0) {
-      textSize(12);
       nodes[0].setStroke(8, 0);
       text("Overstretched by 8", 0, 150);
       line(0, 150, 50, 150);
@@ -711,7 +714,6 @@ public void drawSimulation(boolean controlInfo) {
       text("Understretched by 8", 0, 200);
     } 
     else {
-      textSize(12);
       textAlign(LEFT, CENTER);
       text(scoreName+" SCORE - DISTANCE", 20, 130);
       beginShape(QUADS);
@@ -762,7 +764,7 @@ public void drawSimulation(boolean controlInfo) {
   //popMatrix();
   transparentCountdown--;
   fill(0);
-  textSize(12);
+  textSize(txtFontSizeMedium * txtFontSizeScaling);
   textAlign(LEFT, BOTTOM);
   translate(-width/2, -height/2);
   if (controlInfo) {
@@ -800,6 +802,9 @@ public void _keyPressed() {
   if (keyPressed && Character.toLowerCase(key)=='d') {
     acted = System.nanoTime();
     boolean canDo = JOptionPane.showConfirmDialog(frame, "Disable all nodes under your mouse? This cannot be undone.")==JOptionPane.OK_OPTION;
+    if (!canDo) {
+    	return;
+    }
     String[] nums = underMouse.split("[, ]+");
     for (int k = 0; k < nums.length; k++) {
       try {
@@ -889,16 +894,28 @@ public void _keyPressed() {
     return;
   }
 
-
   if ((keyPressed && Character.toLowerCase(key)=='9')) {
+    acted = System.nanoTime();
+    VIEW_SCALE_USER=max(VIEW_SCALE_USER-1, 1);
+    return;
+  }
+
+
+  if ((keyPressed && Character.toLowerCase(key)=='0')) {
     acted = System.nanoTime();
     VIEW_SCALE_USER=VIEW_SCALE_USER+1;
     return;
   }
 
-  if ((keyPressed && Character.toLowerCase(key)=='0')) {
+  if ((keyPressed && Character.toLowerCase(key)=='7')) {
     acted = System.nanoTime();
-    VIEW_SCALE_USER=max(VIEW_SCALE_USER-1, 1);
+    txtFontSizeScaling=max(txtFontSizeScaling - 0.05f,0.25f);
+    return;
+  }
+
+  if ((keyPressed && Character.toLowerCase(key)=='8')) {
+    acted = System.nanoTime();
+    txtFontSizeScaling=min(txtFontSizeScaling + 0.05f,4f);
     return;
   }
 
@@ -966,6 +983,10 @@ public void flushLines() {
 int transparentCountdown = 0;
 private int selected = -1;
 PFont txt;
+//In pt
+final float txtFontSizeSmall = 12;
+final float txtFontSizeMedium = 20;
+float txtFontSizeScaling = 1.0f;
 
 /** DISTANCE VARIABLES **/
 
@@ -1157,18 +1178,17 @@ class Node {
   public void placeText(String labelString, float offx, float offy) {
     float cx=0, cy=0;
     
-    PApplet e = ClusterSimulation.this;
-    e.fill(0);
-    e.textFont(txt);
-    e.textSize(12);
-    e.textAlign(CENTER, CENTER);
-    e.translate(offx, offy);
+    fill(0);
+    textFont(txt);
+    textSize(txtFontSizeSmall * txtFontSizeScaling);
+    textAlign(CENTER, CENTER);
+    translate(offx, offy);
       
-    e = ClusterSimulation.this;
+    
     cx = screenX(0, 0);
     cy = screenY(0, 0);
     if (pow(mouseX - cx, 2)+pow(mouseY-cy, 2) < 3000) {
-      e.translate(-offx, -offy);
+      translate(-offx, -offy);
       underMouse+=", "+(myId+1);
       return;
     }
@@ -1179,7 +1199,7 @@ class Node {
     float angleDelta = TWO_PI / 10;
     //Label will be placed distance r away, at some angle, in a circle of radius circleR
     float circleR = 20;
-    float r = 25;
+    float r = max(25, NodeDotSize + 5);
     for (float angle = angle0; angle < angle0+TWO_PI; angle += angleDelta) {
       boolean canDraw = true;
       
@@ -1199,7 +1219,7 @@ class Node {
       }
       //Check drawability on the segment connecting label to point. Can't check at the center of the ray since we want to allow
       //labels for points radiating from the exact same spot.
-      for (float rad = 10; rad < r + circleR && canDraw; rad+= 5) {
+      for (float rad = max(10, NodeDotSize + 5); rad < r + circleR && canDraw; rad+= 5) {
         float ox = rad*cos(angle);
         float oy = rad*sin(angle);
         if (!labelPlanner.canDrawAt(cx + ox, cy + oy)) {
@@ -1209,22 +1229,22 @@ class Node {
       if (canDraw) {
         float ox = r*cos(angle);
         float oy = r*sin(angle);
-        e = ClusterSimulation.this;
-        e.stroke(0, 0, 0, 100);
-        e.line(0, 0, ox*((r-circleR/2)/r), oy*((r-circleR/2)/r));
-        e.fill(1, 1, 1, 40);
+        
+        stroke(0, 0, 0, 100);
+        line(0, 0, ox*((r-circleR/2)/r), oy*((r-circleR/2)/r));
+        fill(1, 1, 1, 40);
         if (showLabels == SHOW_LABELS_NUMBER) {
-          e.ellipse(ox, oy, circleR, circleR);
+          ellipse(ox, oy, circleR, circleR);
         }
-        e.fill(0);
-        e.translate(-offx, -offy);
-        e.text(labelString, (int)(offx+ox), (int)(offy+oy));
+        fill(0);
+        translate(-offx, -offy);
+        text(labelString, (int)(offx+ox), (int)(offy+oy));
         labelPlanner.mark(cx + ox, cy + oy, circleR);
         return;
       }
     }
-    e = ClusterSimulation.this;
-    e.translate(-offx, -offy);
+    
+    translate(-offx, -offy);
   }
   public void setStroke(float goodness, float distance) {
     strokeWeight(2);
@@ -1417,7 +1437,7 @@ public void TestFasta(int mode){
         TestFasta(mode);
         return;
       }
-      toRead = got.getAbsoluteFile().toURI().toURL().toString();
+      toRead = got.getAbsoluteFile().toString();
     } 
     catch (Throwable e){
       e.printStackTrace();
@@ -1740,7 +1760,7 @@ public void GetCustomDistances(String customLoc){
     byte[] buffer = new byte[0x40000]; //256kb at a time
     for(int actuallyFillBuffer = 0; actuallyFillBuffer < 2; actuallyFillBuffer++){
       //Used to be called openStream...
-      InputStream is = createInput(customLoc);
+      InputStream is = openStream(customLoc);
       try { 
         int read = -1;
         int lineNum = 0;
@@ -1891,7 +1911,7 @@ public void pdScoreMultisearch(String[] lines){
         JOptionPane.showMessageDialog(frame, "You entered a nonexistant file:\n"+got);
         return;
       }
-      toRead = got.getAbsoluteFile().toURI().toURL().toString();
+      toRead = got.getAbsoluteFile().toString();
     } 
     catch (Throwable e){
       e.printStackTrace();
@@ -2122,6 +2142,9 @@ public float sumDeviant(float[][] one, float[][] two){
   return toRet;
 }
   static public void main(String[] passedArgs) {
+    //If this returns the right value, then HIDPI scaling will happen if the
+    //system default LAF is the GTK one.
+    //System.out.println(Toolkit.getDefaultToolkit().getScreenResolution());
     String[] appletArgs = new String[] { "ClusterSimulation" };
     if (passedArgs != null) {
       PApplet.main(concat(appletArgs, passedArgs));
