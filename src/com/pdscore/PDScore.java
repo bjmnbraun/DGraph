@@ -1,5 +1,7 @@
 package com.pdscore;
 
+import java.util.Arrays;
+
 //Code for computing PD (peptide distance) scores
 public class PDScore {
 	private static final char[] list1 = new char[]{
@@ -57,14 +59,12 @@ public class PDScore {
 	}
 	public static double PDScore0(String a, String b){
 		double totSum = 0;
-		double partSum = 0;
 		double pval1 = 0;
 		double pval2 = 0;
-		int att = 0;
 		int k = 0;
 		for(k = 0; k < b.length(); k++){
-			partSum = 0;
-			for(att = 0; att < 5; att++){
+			double partSum = 0;
+			for(int att = 0; att < 5; att++){
 				pval1 = pdVal(a.charAt(k),att);
 				pval2 = pdVal(b.charAt(k),att);
 				pval1 = pval1-pval2;
@@ -74,37 +74,69 @@ public class PDScore {
 		}
 		return totSum/a.length();
 	}
+	//Computes the PD between two amino acids a and b. 
+	public static double _PD(char a, char b){
+		double partSum = 0;
+		for(int att = 0; att < 5; att++){
+			double pval1 = pdVal(a,att);
+			double pval2 = pdVal(b,att);
+			pval1 = pval1-pval2;
+			partSum = partSum + pval1*pval1;
+		}
+		return Math.sqrt(partSum);
+	}
 	/**
 	 * Computes the PD2 score between sequences A and B. Both may be of variable lengths.
 	 **/
-	public static double PDScore2(String a, String b, int wSize){
+	public static double PDScoreWindowed(String a, String b, int wSize){
 		if (a.length() > b.length()){
 			String tmp = a;
 			a = b;
 			b = tmp;
 		}
-
-		boolean[] bFlagged = new boolean[b.length()];
-		//the last wSize-1 of bFlagged can never possibly be truth'ed.
-		int matches = 0;
-		for(int w = 0; w < a.length()-wSize; w++){
-			//Check if b contains this string:
-			String toFind = a.substring(w,w+wSize);
-			for(int search = 0; search < b.length(); search++){
-				//TODO: search for approximate matches 
-				int value = b.indexOf(toFind,search);
-				if (value==-1){
-					break;
+		//Shrink window size to the length of the shortest sequence.
+		if (wSize > a.length()) {
+			wSize = a.length();
+		}
+		
+		//Keep track of the "best" PDScore * wSize for each window of A:
+		//Note that we don't do the division by wSize until the last line of this function.
+		double[] bestMatches = new double[a.length() - wSize + 1];
+		Arrays.fill(bestMatches, Double.MAX_VALUE);
+		
+		//For all possible ways to place the first wSize window of a onto b
+		for(int shift = 0; shift <= b.length() - wSize; shift++) {
+			//Initialize a sliding window
+			double slidingWindowPD = 0;
+			int off = 0;
+			//See above for why this is never greater than a's length
+			for(; off < wSize - 1; off++) {
+				slidingWindowPD += _PD(a.charAt(off), b.charAt(shift + off));
+			}
+			//For all wSize windows in a, which we are matching to b shift-many characters later.
+			//The window ends on character "off".
+			for(; off < a.length() && off + shift < b.length();)  {
+				//Integrate a[off]
+				slidingWindowPD += _PD(a.charAt(off), b.charAt(shift + off));
+				//Advance off++
+				off++;
+				//At this point we have a full window of wSize PD values in slidingWindowPD ending before off.
+				//i.e. the segment of a: [off - wSize, off) with some window in b
+				double oldBest = bestMatches[off - wSize];
+				if (slidingWindowPD < oldBest) {
+					bestMatches[off - wSize] = slidingWindowPD;
 				}
-				if (!bFlagged[value]){
-					bFlagged[value] = true;
-					matches++;
-					break;
-				}
-				search = value+1;
+				//Advance and subtract off the first character in the window 
+				slidingWindowPD -= _PD(a.charAt(off - wSize), b.charAt(shift + off - wSize));
 			}
 		}
-		return 20 * Math.sqrt( 1 - (matches / (double) (a.length()-wSize)));
+		//Compute the average of bestMatches
+		double sum = 0;
+		for(double x : bestMatches) {
+			sum += x;
+		}
+		//bestMatches are in fact wSize * PDScore, so handle that here:
+		return sum / bestMatches.length / wSize;
 	}
 
 

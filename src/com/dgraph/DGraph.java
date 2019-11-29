@@ -9,13 +9,15 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Scanner;
 import java.util.TreeSet;
 
 import javax.swing.BorderFactory;
@@ -25,7 +27,10 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JSpinner;
 import javax.swing.JTextArea;
+import javax.swing.SpinnerModel;
+import javax.swing.SpinnerNumberModel;
 
 import com.pdscore.PDScore;
 
@@ -40,9 +45,11 @@ public class DGraph extends PApplet {
 	int RUN_MODE = -1;
 	int INPUT_MODE = -1;
 	String toRead;
+	String inputFileName;
 	String customLoc;
 	boolean noninteractive = false;
 	boolean singleFramePdf = false;
+	boolean SHOW_HELP_TEXT = true;
 
 	public void start() {
 		//Test here if we have write priviledges
@@ -54,7 +61,7 @@ public class DGraph extends PApplet {
 		} 
 		catch (Throwable e){
 			JOptionPane.showMessageDialog(frame,"Please run from a directory that has file-write access.\n","Write-Protected Directory",JOptionPane.ERROR_MESSAGE);
-			exit();
+			System.exit(0);
 		}
 
 		doCommandLine();
@@ -75,6 +82,7 @@ public class DGraph extends PApplet {
 					"Utility: Sequence List -> PD Score Matrix (Short Peptide)",
 					"Utility: DNA Fasta -> DNA Sequence Similarity matrix",
 					"Utility: Find all pairs of peptide in a list with PD Score under a threshold",
+					"Utility: Jalview all pairwise sequeqnce alignments output -> Parwise alignment score list",
 			};
 			JRadioButton [] options = new JRadioButton[optionsStr.length];
 			ButtonGroup group = new ButtonGroup();
@@ -96,7 +104,7 @@ public class DGraph extends PApplet {
 					JOptionPane.OK_CANCEL_OPTION,
 					JOptionPane.PLAIN_MESSAGE,null,null,null) == JOptionPane.OK_OPTION;
 			if (!shouldRun) {
-				exit();
+				System.exit(0);
 			}
 			holder.setVisible(false);
 
@@ -112,11 +120,8 @@ public class DGraph extends PApplet {
 
 		if (RUN_MODE != -1){
 			TestFasta(RUN_MODE);
-			exit();
+			System.exit(0);
 		}
-		
-		destroySimulation();
-		setupSimulation();
 		
 		//Now do PApplet's start to get things rolling.
 		super.start();
@@ -124,26 +129,36 @@ public class DGraph extends PApplet {
 
 	//This is actually run on the first "frame." A call to size triggers it to be called _again_ (!)
 	public void setup() {
+		//This throws an exception and causes us to reenter once "frame" exists
 		size(800,800,P2D);
+		txt = createFont("Vera.ttf",90,true);
+		frameRate(60);
 		if (!frame.isResizable()){
 			frame.setResizable(true);
 		}
-		txt = createFont("Vera.ttf",90,true);
-		frameRate(60);
 	}
 
 	long lastRenderTime = 0;
+	boolean needsSetupSimulation = true;
 	public void draw(){
 		if (!frame.isResizable()){
 			frame.setResizable(true);
 		}
-		//TODO do this in a more sensible way...
-		//drawSimulation(true);
+		//Frame exists here.
+		if (needsSetupSimulation) {
+			destroySimulation();
+			setupSimulation();
+			needsSetupSimulation = false;
+		}
 		if (keyPressed && key=='p' && (System.nanoTime() - lastRenderTime) > 0.5e9){
 			renderThisFrame = true;
 			lastRenderTime = System.nanoTime();
 		}
 		drawOrRecordSimulation();
+		if (!simStarted && !renderThisFrame) {
+			noLoop();
+		}	
+		renderThisFrame = false;
 	}
 
 	float[] shadings;
@@ -210,12 +225,15 @@ public class DGraph extends PApplet {
 		if (renderThisFrame){
 			renderLocation = renderUrl!=null?renderUrl:((renderDir!=null?renderDir+"/":"")+frameCount);
 			beginRecord(PDF, renderLocation + ".pdf");
+			smooth();
 		}
 		drawSimulation(!renderThisFrame);
 		if (renderThisFrame){
 			endRecord();
+			noSmooth();
 			//Try to convert pdf to png with imagemagick, if installed:
-			ProcessBuilder pb = new ProcessBuilder("magick","-density","300",renderLocation + ".pdf",/*"-resize","25%",*/renderLocation + ".png");   
+			/*
+			ProcessBuilder pb = new ProcessBuilder("magick","-density","300",renderLocation + ".pdf",renderLocation + ".png");   
 			pb.redirectErrorStream(true);   
 			try {   
 				Process p = pb.start();   
@@ -228,9 +246,10 @@ public class DGraph extends PApplet {
 			} catch(Throwable e) {
 				e.printStackTrace();
 			} 
-			renderThisFrame = false;
+			*/
+			save(renderLocation + ".png");
 			if (singleFramePdf){
-				exit();
+				System.exit(0);
 			}
 		}
 	}
@@ -249,7 +268,7 @@ public class DGraph extends PApplet {
 		String help = System.getProperty("help");
 		if (help!=null){
 			doHelp();
-			exit();
+			System.exit(0);
 		}
 		boolean doAutomation = false;
 		String numRuns = System.getProperty("runs");
@@ -408,7 +427,7 @@ public class DGraph extends PApplet {
 			e.printStackTrace();
 			batchError("Error in analysis:"+e.toString());
 		}
-		exit();
+		System.exit(0);
 	}
 	private void batchError(String msg){
 		System.out.println();
@@ -439,13 +458,11 @@ public class DGraph extends PApplet {
 		System.out.println();
 		System.out.printf(formatString,"-DinCustom","An NxN matrix (in a text file) of distances to use");
 		System.out.println();
-		System.out.printf(formatString,"-Dpdf","Flag, means to open the fasta, render a pdf in the same directory, and exit.");
+		System.out.printf(formatString,"-Dpdf","Flag, means to open the fasta, render a pdf in the same directory, and System.exit(0).");
 		System.out.println();
 		System.out.printf(formatString,"-Dzoom","Zooming factor. Lower numbers means more zoomed in. Must be >=1.");
 		System.out.println();
 	}
-
-
 
 	public static final int SHOW_LABELS_SEQUENCE = 0, 
 			SHOW_LABELS_NAME = SHOW_LABELS_SEQUENCE + 1, 
@@ -484,11 +501,14 @@ public class DGraph extends PApplet {
    }
 		 */
 		boolean useColoringFile = false;
+		int windowSize = 0;
 		if (INPUT_MODE == -1) {
 			String [] optionsStr = { 
 					"Fasta sequences, generate PD scores",
-					"Fasta sequences, use custom distance matrix",
-					"Just labels (one per line), use custom distance matrix",
+					"Fasta sequences + pairwise distance list",
+					"Fasta sequences + custom distance matrix",
+					"Just labels (one per line) + pairwise distance matrix",
+					"Just labels (one per line) + custom distance matrix",
 			};
 			JRadioButton [] options = new JRadioButton[optionsStr.length];
 			ButtonGroup group = new ButtonGroup();
@@ -501,21 +521,30 @@ public class DGraph extends PApplet {
 			}
 			JCheckBox useColoringFileCB = new JCheckBox("Use coloring file?");
 			pane.add(useColoringFileCB);
+			
+			SpinnerModel model = new SpinnerNumberModel(22, 7, 100, 1);     
+			JSpinner spinner = new JSpinner(model);
+			JLabel label = new JLabel("PD score averaging window size (longer than sequence OK):");
+			label.setLabelFor(spinner);
+			pane.add(label);
+			pane.add(spinner);
+
+			JCheckBox alignedSequencePDCB = new JCheckBox("PD score for aligned sequences (overrides windowing)");
+			pane.add(alignedSequencePDCB);
+			
 			options[0].setSelected(true);
 			useColoringFileCB.setSelected(false);
+			alignedSequencePDCB.setSelected(false);
 
-			Frame holder = new Frame("DGraph - Initializing.");
-			holder.setVisible(true);
 			boolean shouldRun = JOptionPane.showOptionDialog(
-					holder,
+					frame,
 					pane,
 					"Select input data type",
 					JOptionPane.OK_CANCEL_OPTION,
 					JOptionPane.PLAIN_MESSAGE,null,null,null) == JOptionPane.OK_OPTION;
 			if (!shouldRun) {
-				exit();
+				System.exit(00);
 			}
-			holder.setVisible(false);
 
 			INPUT_MODE = 0;
 			for(int k = 0; k < options.length; k++){
@@ -525,37 +554,44 @@ public class DGraph extends PApplet {
 				}
 			}
 			useColoringFile = useColoringFileCB.isSelected();
+			windowSize = alignedSequencePDCB.isSelected() ? 0 : (int) spinner.getValue();
 		}
 
-		if (INPUT_MODE == 0) {
-			//Fasta, generate PD scores
+		if (INPUT_MODE == 0 || INPUT_MODE == 1 || INPUT_MODE == 2) {
+			//Read in a fasta
 			if (toRead == null) {
 				toRead = pickUserFile("Open a Fasta File");
 			}
+			inputFileName = new File(toRead).getName();
 			String[][] fastaInfo = loadFasta(toRead);
 			initNodesFromFasta(fastaInfo);
-			initDistancesWithPDScore(fastaInfo);
+			if (INPUT_MODE == 0) {
+				//Generate distances from fasta
+				initDistancesWithPDScore(fastaInfo, windowSize);
+			}
 		}
-		if (INPUT_MODE == 1) {
-			//Fasta, generate 
-			if (toRead == null) {
-				toRead = pickUserFile("Open a Fasta File");
-			}
-			String[][] fastaInfo = loadFasta(toRead);
-			initNodesFromFasta(fastaInfo);
+		if (INPUT_MODE == 3 || INPUT_MODE == 4) {
+			//Custom labels not yet implemented
+			throw new RuntimeException("Not yet implemented.");
+		}
+		if (INPUT_MODE == 1 || INPUT_MODE == 3) {
+			//Load pairwise distance list. Fill in the symmetric differences in nodes.
 			if (customLoc == null) {
-				scoreName = JOptionPane.showInputDialog(frame, "Enter the name of your custom score function");
 				customLoc = pickUserFile("Select " + scoreName + " matrix file");
+				scoreName = JOptionPane.showInputDialog(frame, "Enter the name of your custom score function","Jalview");
 			}
-			loadDistancesFromFile(customLoc);
+			loadPairwiseDistances(customLoc);
+		}
+		if (INPUT_MODE == 2 || INPUT_MODE == 4) {
+			if (customLoc == null) {
+				customLoc = pickUserFile("Select " + scoreName + " matrix file");
+				scoreName = JOptionPane.showInputDialog(frame, "Enter the name of your custom distance metric","Clustal");
+			}
+			loadCustomDistanceMatrix(customLoc);
 		}
 		//Make a directory in the same directory as toRead.
 		renderDir = toRead + "-DGraph";
 		new File(renderDir).mkdir();
-		if (INPUT_MODE == 2) {
-			//Custom labels not yet implemented
-			throw new RuntimeException("Not yet implemented.");
-		}
 		if (useColoringFile) {
 			setupShaded();
 		}
@@ -563,10 +599,23 @@ public class DGraph extends PApplet {
 		//TODO should be a single button to print PDF + PNG.
 
 		//if (!iS) g.beginDraw();
+		requestFocus();
 	}
 
-	private void loadDistancesFromFile(String customLoc) {
+	private void loadCustomDistanceMatrix(String customLoc) {
 		try {
+			Scanner in = new Scanner(openStream(customLoc));
+			for(int i = 0; i < nodes.length; i++) {
+				nodes[i].distances = new float[nodes.length];
+				String[] tokens = in.nextLine().trim().split("\\s+");
+				if (tokens.length != nodes.length) {
+					throw new RuntimeException("Unexpected line length: Wanted " + nodes.length + " distances.");
+				}
+				for(int j = 0; j < nodes.length; j++) {
+					nodes[i].distances[j] = new Float(tokens[j]);
+				}
+			}
+			/*
 			byte[] buffer = new byte[0x40000]; //256kb at a time
 			for(int actuallyFillBuffer = 0; actuallyFillBuffer < 2; actuallyFillBuffer++){
 				InputStream is = openStream(customLoc);
@@ -632,53 +681,116 @@ public class DGraph extends PApplet {
 					is.close();
 				}
 			}
-		} 
-		catch (Throwable e){
+			*/
+		} catch (Throwable e){
+			e.printStackTrace();
 			JOptionPane.showMessageDialog(frame, "Error reading distance matrix: " + e.toString(), "Error!", JOptionPane.ERROR_MESSAGE);
-			exit();
+			System.exit(0);
 		}
 	}
-	private void initDistancesWithPDScore(String[][] fastaInfo) {
-		scoreName = "PD";
+	private void loadPairwiseDistances(String customLoc) {
+		try {
+			//Make a lookup table of node identifiers
+			HashMap<String, Integer> nodeLookup = new HashMap<String, Integer>();
+			for(int i = 0; i < nodes.length; i++) {
+				String fastaLabel = nodes[i].FastaLabel;
+				nodes[i].distances = new float[nodes.length];
+				nodeLookup.put(fastaLabel, i);
+			}
+			boolean[][] hasDistance = new boolean[nodes.length][];
+			for(int i = 0; i < nodes.length; i++) {
+				hasDistance[i] = new boolean[nodes.length];
+			}
+			Scanner in = new Scanner(openStream(customLoc));
+			while(in.hasNextLine()) {
+				String a = in.next();
+				String b = in.next();
+				float score = (float) in.nextDouble(); //not the same as in.nextFloat().
+				in.nextLine();
+				int idxA = nodeLookup.get(a);
+				int idxB = nodeLookup.get(b);
+				if (idxA == idxB) {
+					continue; //Just ignore pairwise between identical sequences.
+				}
+				nodes[idxA].distances[idxB] = score;
+				nodes[idxB].distances[idxA] = score;
+				hasDistance[idxA][idxB] = true;
+				hasDistance[idxB][idxA] = true;
+			}
+			//Check that we got all distances
+			for(int i = 0; i < nodes.length; i++) {
+				for(int j = 0; j < nodes.length; j++) {
+					if (i == j) continue;
+					if (!hasDistance[i][j]) {
+						throw new RuntimeException("Missing distance between " + nodes[i].FastaLabel + ", " + nodes[i].FastaLabel);
+					}
+				}
+			}
+		} catch (Throwable e){
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(frame, "Error reading pairwise distance list: " + e.toString(), "Error!", JOptionPane.ERROR_MESSAGE);
+			System.exit(0);
+		}
+	}
+	//0 window size for computing PDscore with aligned sequences
+	private void initDistancesWithPDScore(String[][] fastaInfo, int windowSize) {
+		scoreName = "PD" + (windowSize == 0 ? "" : " " + windowSize + "-window");
 
 		long lastDraw = System.nanoTime();
 		for (int k = 0; k < nodes.length; k++) {
 			float[] dist = new float[nodes.length];
 			for (int p = 0; p < nodes.length; p++) {
 				if (p==k) continue;
-				dist[p]=(float)PDScore.PDScore(fastaInfo[1][p], fastaInfo[1][k]);
+				if (p < k) {
+					//Symmetry:
+					dist[p] = nodes[p].distances[k];
+					continue;
+				}
+				if (windowSize == 0) {
+					if (fastaInfo[1][p].length() != fastaInfo[1][k].length()) {
+						System.err.println("WARNING: PDscore computation assumed aligned inputs, but " + fastaInfo[0][p] +", " +fastaInfo[0][k] +" have different lengths.");
+					
+					}
+					dist[p]=(float)PDScore.PDScore(fastaInfo[1][p], fastaInfo[1][k]);
+				} else {
+					if (fastaInfo[1][k].contains("-")) {
+						System.err.println("Warning: Sequence " + fastaInfo[0][k] + " contains dashes, windows PDscore is best used on raw sequence (no dashes)");
+					}
+					dist[p]=(float)PDScore.PDScoreWindowed(fastaInfo[1][p], fastaInfo[1][k], windowSize);
+				}
 			}
 			nodes[k].distances = dist;
-			nodes[k].myId = k;
-			nodes[k].display = true;
 			//System.out.println("Processed: "+lines[k]);
-			if (!noninteractive) if ((System.nanoTime()-lastDraw)>.5e9f) {
+			if (!noninteractive) if ((System.nanoTime()-lastDraw)>.1e9f) {
 				lastDraw = System.nanoTime();
 				background(0);
 				fill(255);
 				textFont(txt);
 				textAlign(LEFT, TOP);
-				textSize(txtFontSizeMedium * txtFontSizeScaling);
+				textSize(txtFontSizeMedium * UIScaling);
 				text("Calculating PDscores:"+nf((k/(float)nodes.length)*100, 0, 2)+"%", 5, 5);
 				g.endDraw();
-				//repaint();
+				repaint();
 				g.beginDraw();
 			}
 		}
 	}
 	private void removeIsolatedNodes() {
+		removed = "";
 		float dontShowCutoff = REMOVAL_ISLAND_FINDER;
-		boolean hasLessThanCutoff = false;
 		for (int k = 0; k < nodes.length; k++) {
+			boolean hasLessThanCutoff = false;
 			float[] dist = nodes[k].distances;
 			for (int p = 0; p < nodes.length; p++) {
 				if (p==k) continue;
 				if (dist[p] < dontShowCutoff /**&& dist[p]!=0**/)
 					hasLessThanCutoff = true;
-				if (!hasLessThanCutoff) {
-					removed+=" ,"+(k+1);
-					nodes[k].display = false;
-				}
+			}
+			if (!hasLessThanCutoff) {
+				removed+=" ,"+(k+1);
+				nodes[k].display = false;
+			} else {
+				nodes[k].display = true;
 			}
 		}
 	}
@@ -688,12 +800,12 @@ public class DGraph extends PApplet {
 		for (int k = 0; k < nodes.length; k++) {
 			nodes[k] = new Node();
 		}
-		removed = "";
 
 		//if (!iS) noLoop();
 		for (int k = 0; k < nodes.length; k++) {
 			nodes[k].FastaLabel = fastaInfo[0][k];
 			nodes[k].FastaSequence = fastaInfo[1][k];
+			nodes[k].myId = k;
 			final String hashCoordText = "#COORDS:";
 			int hashCoords = nodes[k].FastaLabel.indexOf(hashCoordText);
 			if (hashCoords==-1) { //Random position
@@ -720,17 +832,20 @@ public class DGraph extends PApplet {
 		try {
 			fastaInfo = unFastaSuper(lines);
 		} catch (Throwable e) {
+			e.printStackTrace();
 			JOptionPane.showMessageDialog(frame, "Error reading fasta file: " + e.toString(), "Error!", JOptionPane.ERROR_MESSAGE);
-			exit();
+			System.exit(0);
 		}
 		return fastaInfo;
 	}
 
 	public void scatterNode(Node got) {
 		float theta = random(TWO_PI);
-		float mag = random(640/200f, 640/2f);
+		float mag = random(0.01f, 1);
 		got.pos[0] = mag*cos(theta);
 		got.pos[1] = mag*sin(theta);
+		got.vel[0] = 0;
+		got.vel[1] = 0;
 	}
 	public void scatterNodes() {
 		//Similar to reinit, except that only the positions of the already existant nodes are moved.
@@ -755,7 +870,7 @@ public class DGraph extends PApplet {
 	private float VIEW_SCALE = -1; //Updated from VIEW_SCALE_USER
 	private float VIEW_SCALE_USER = 25;
 	private int showLabels = SHOW_LABELS_NONE; 
-	private boolean ShowMinLines = false;
+	private boolean showLines = true;
 	private int NodeDotSize = 3; //rectangle of this radius at each node
 	private String underMouse;
 	int simulationTicks = 0;
@@ -768,81 +883,86 @@ public class DGraph extends PApplet {
 		UPDATES_ON_DRAW = simStarted; //GUI uses this so the user can just look at it for a second.
 		underMouse = "";
 		textFont(txt);
-		textSize(txtFontSizeMedium * txtFontSizeScaling);
+		textSize(txtFontSizeMedium * UIScaling);
+		//Start out with some sane defaults:
 		noStroke();
 		fill(0);
+		stroke(0);
+		float padding = 5;
+		StringWriter sw;
+		PrintWriter pw;
+		//New textbox
+		sw = new StringWriter(); pw = new PrintWriter(sw);
+		pw.println("Input file: " + inputFileName);
+		pw.println("\"Islands\" Removed by "+REMOVAL_ISLAND_FINDER+" distance threshold: "+removed.substring(min(removed.length(), 2)));
+		//2, controlInfo?20:5, width, 80);
+		//pw.println("Noncomparable Seperation Factor:"+CURRENT_CUTOFF); //, 2, 4);
+		//pw.println("Displaying:"+SHOW_LINES); //, 2, 100);
+		textAlign(LEFT, TOP);
+		fill(0);
+		text(sw.toString(), padding, padding);
+		
 		if (controlInfo) {
-			textAlign(LEFT, TOP);
-			text("\"Islands\" Removed by "+REMOVAL_ISLAND_FINDER+" PD threshold: "+removed.substring(min(removed.length(), 2)), 2, controlInfo?20:5, width, 80);
-			text("Noncomparable Seperation Factor:"+CURRENT_CUTOFF, 2, 4);
-			text("Displaying:"+SHOW_LINES, 2, 100);
-			textAlign(RIGHT, BOTTOM);
 			if (!UPDATES_ON_DRAW) {
 				fill(255, 0, 0);
-				text("Simulation stopped. Press 'y' to start again.", width, 0);
+				textAlign(RIGHT, TOP);
+				text("Simulation stopped. Press 'y' to start again.", width - padding, padding);
 			}
-			fill(0);
-			float ypos = height - textDescent();
-			float ydelta = textAscent() + textDescent();
-			float xpos  = width - 2;
-			text("'h' to switch on/off lines", xpos, ypos -= ydelta);
-			text("'c' to turn off labels", xpos, ypos -= ydelta);
-			text("'s' to show sequence numbering", xpos, ypos -= ydelta);
-			text("'a' to show sequences", xpos, ypos -= ydelta);
-			text("'b' to show sequence headers", xpos, ypos -= ydelta);
-			text("'9' zooms out", xpos, ypos -= ydelta);
-			text("'0' zooms in", xpos, ypos -= ydelta);
-			text("'m' saves the current state", xpos, ypos -= ydelta);
-			text("'p' renders current state", xpos, ypos -= ydelta);
-			text("'j' sets the physics options", xpos, ypos -= ydelta);
-			text("'d' disable nodes", xpos, ypos -= ydelta);
-			text("'w' increases dot-size", xpos, ypos -= ydelta);
-			text("'q' decreases dot-size", xpos, ypos -= ydelta);
-			text("'r' or 'e' re-run the simulation. 'e' only scatters the points, 'r' does more.", xpos, ypos -= ydelta);
+			if (SHOW_HELP_TEXT) {
+				sw = new StringWriter(); pw = new PrintWriter(sw);
+				pw.println("'h' to hide/show this help");
+				pw.println("'l' to switch on/off lines");
+				pw.println("'c' to turn off labels");
+				pw.println("'s' to show sequence numbering");
+				pw.println("'a' to show sequences");
+				pw.println("'b' to show sequence headers");
+				pw.println("'9' zooms out");
+				pw.println("'0' zooms in");
+				pw.println("'m' saves the current state");
+				pw.println("'p' renders current state");
+				pw.println("'j' sets the physics options");
+				pw.println("'d' disable nodes");
+				pw.println("'w' increases dot-size");
+				pw.println("'q' decreases dot-size");
+				pw.println("'e' to scatters the points.");
+				pw.println("'y' to pause/resume.");
+
+				fill(0);
+				textAlign(RIGHT, BOTTOM);
+				text(sw.toString(), width - padding, height - padding);
+			}
 		}
 		if (true) {
-			if (transparentCountdown>0) {
-				nodes[0].setStroke(8, 0);
-				text("Overstretched by 8", 0, 150);
-				line(0, 150, 50, 150);
-				nodes[0].setStroke(0, 0);
-				text("Just about perfect", 0, 175);
-				line(0, 175, 50, 175);
-				nodes[0].setStroke(-8, 0);
-				line(0, 200, 50, 200);
-				text("Understretched by 8", 0, 200);
-			} 
-			else {
-				textAlign(LEFT, CENTER);
-				text(scoreName+" SCORE - DISTANCE", 20, 130);
-				beginShape(QUADS);
-				float minY = 150;
-				float maxY = 400;
-				for (int PD = 0; PD <= SHOW_LINES; PD++) {
-					float mag = PD/SHOW_LINES;
-					float y = lerp(minY, maxY, mag);
-					strokeColors(PD);
-					fill(g.strokeColor);
-					if (PD>0) {
-						vertex(20, y);
-						vertex(25, y);
-					}
-					vertex(25, y);
+			fill(0);
+			textAlign(LEFT, BOTTOM);
+			text(scoreName+" distance", 20, height * 0.25f - (textAscent() + textDescent())/2 - padding);
+			beginShape(QUADS);
+			float minY = height * 0.25f;
+			float maxY = height * 0.75f;
+			for (float PD = 0; PD <= SHOW_LINES; PD+=SHOW_LINES/20) {
+				float mag = PD/SHOW_LINES;
+				float y = lerp(minY, maxY, mag);
+				strokeColors(PD);
+				fill(g.strokeColor);
+				if (PD>0) {
 					vertex(20, y);
+					vertex(25, y);
 				}
-				endShape();
-				fill(0);
-				for (int PD = 0; PD <= SHOW_LINES; PD++) {
-					float mag = PD/SHOW_LINES;
-					float y = lerp(minY, maxY, mag);
-					text(PD, 30, y);
-				}
+				vertex(25, y);
+				vertex(20, y);
+			}
+			endShape();
+			fill(0);
+			for (float PD = 0; PD <= SHOW_LINES; PD+=(SHOW_LINES/20) * 5) {
+				float mag = PD/SHOW_LINES;
+				float y = lerp(minY, maxY, mag);
+				textAlign(LEFT, CENTER);
+				text(PD, 30, y);
 			}
 		}
 		//Draw simulation:
-		VIEW_SCALE = 40f/VIEW_SCALE_USER;
+		VIEW_SCALE = VIEW_SCALE_USER * VIEW_SCALE_USER;
 		//keyPressed2();
-		//pushMatrix();
 		translate(width/2, height/2);
 		//The actual simulation:
 		runActualSimulation();
@@ -860,25 +980,15 @@ public class DGraph extends PApplet {
 			nodes[k].draw();
 		}
 		wantsFrameBreak = false;
-		//popMatrix();
-		transparentCountdown--;
-		fill(0);
-		textSize(txtFontSizeMedium * txtFontSizeScaling);
-		textAlign(LEFT, BOTTOM);
 		translate(-width/2, -height/2);
+		
 		if (controlInfo) {
-			text("Simulation ticks:"+simulationTicks+"\nSolution \'goodness\':"+TOTAL_VARIANCE+"\nTimes smaller than random:"+RANDOM_VARIANCE/TOTAL_VARIANCE+"\nNodes under mouse:"+underMouse.substring(min(underMouse.length(), 2)), 0, height-200, min(300, width-100), 200);
+			fill(0);
+			textSize(txtFontSizeMedium * UIScaling);
+			textAlign(LEFT, BOTTOM);
+			text("Simulation ticks:"+simulationTicks+"\nSolution \'goodness\':"+TOTAL_VARIANCE+"\nTimes smaller than random:"+RANDOM_VARIANCE/TOTAL_VARIANCE+"\nNodes under mouse:"+underMouse.substring(min(underMouse.length(), 2)), padding, height - padding);
 			stroke(0);
-			if (false && simulationTicks==200) {
-				System.out.printf("%-7.3f %-7.3f %-7.3f %-14.3f", timeStep, fluidFriction, mass, TOTAL_VARIANCE);
-				System.out.println();
-			}
 		}
-		/*
-  if (frameCount % 2 == 0) {
-	  image(textPaneClone,0,0,width,height,0,0,width,height);
-  }
-		 */
 	}
 	private long acted = System.nanoTime();
 	/**
@@ -893,9 +1003,14 @@ public class DGraph extends PApplet {
 		}
 	}
 	public void _keyPressed() {
+		loop();
 		if (keyPressed && Character.toLowerCase(key)=='y') {
 			acted = System.nanoTime();
 			simStarted = !simStarted;
+			return;
+		}
+		if (keyPressed && Character.toLowerCase(key)=='p') {
+			acted = System.nanoTime();
 			return;
 		}
 		if (keyPressed && Character.toLowerCase(key)=='d') {
@@ -915,11 +1030,13 @@ public class DGraph extends PApplet {
 			}
 			return;
 		}
+		/*
 		if (keyPressed && Character.toLowerCase(key)=='r') {
 			acted = System.nanoTime();
 			setupSimulation();
 			return;
 		}
+		*/
 		if (keyPressed && Character.toLowerCase(key)=='e') {
 			acted = System.nanoTime();
 			scatterNodes();
@@ -935,19 +1052,6 @@ public class DGraph extends PApplet {
 			transparentCountdown = 10;
 			return;
 		}
-		/*
-  if (frame!=null && keyPressed && Character.toLowerCase(key)=='c'){
-   acted = System.nanoTime();
-   save("Screenshots/"+(int)SHOW_LINES+"-"+frameCount+".png");
-   SHOW_LINES--;
-   try {
-   Thread.sleep(200);
-   } 
-   catch (Throwable e){
-   };
-   return;
-   }
-		 */
 
 		if ((keyPressed && Character.toLowerCase(key)=='a')) {
 			acted = System.nanoTime();
@@ -974,10 +1078,15 @@ public class DGraph extends PApplet {
 			return;
 		}
 
-
 		if ((keyPressed && Character.toLowerCase(key)=='h')) {
 			acted = System.nanoTime();
-			ShowMinLines = !ShowMinLines;
+			SHOW_HELP_TEXT = !SHOW_HELP_TEXT;
+			return;
+		}
+
+		if ((keyPressed && Character.toLowerCase(key)=='l')) {
+			acted = System.nanoTime();
+			showLines = !showLines;
 			return;
 		}
 
@@ -995,32 +1104,36 @@ public class DGraph extends PApplet {
 
 		if ((keyPressed && Character.toLowerCase(key)=='9')) {
 			acted = System.nanoTime();
-			VIEW_SCALE_USER=max(VIEW_SCALE_USER-1, 1);
+			VIEW_SCALE_USER=max(VIEW_SCALE_USER*0.95f, 1);
 			return;
 		}
 
 
 		if ((keyPressed && Character.toLowerCase(key)=='0')) {
 			acted = System.nanoTime();
-			VIEW_SCALE_USER=VIEW_SCALE_USER+1;
+			VIEW_SCALE_USER=VIEW_SCALE_USER*1.05f;
 			return;
 		}
 
 		if ((keyPressed && Character.toLowerCase(key)=='7')) {
 			acted = System.nanoTime();
-			txtFontSizeScaling=max(txtFontSizeScaling - 0.05f,0.25f);
+			UIScaling=max(UIScaling - 0.05f,0.25f);
 			return;
 		}
 
 		if ((keyPressed && Character.toLowerCase(key)=='8')) {
 			acted = System.nanoTime();
-			txtFontSizeScaling=min(txtFontSizeScaling + 0.05f,4f);
+			UIScaling=min(UIScaling + 0.05f,4f);
 			return;
 		}
 
 		if ((keyPressed && Character.toLowerCase(key)=='j')) {
 			acted = System.nanoTime();
-			newPhysicsVariables();
+			new Thread() {
+				public void run() {
+					newPhysicsVariables();
+				}
+			}.start();
 			return;
 		}
 	}
@@ -1085,13 +1198,13 @@ public class DGraph extends PApplet {
 	//In pt
 	final float txtFontSizeSmall = 12;
 	final float txtFontSizeMedium = 20;
-	float txtFontSizeScaling = 1.0f;
+	float UIScaling = 1.0f;
 
 	/** DISTANCE VARIABLES **/
 
-	private float CURRENT_CUTOFF = 999;
-	private float SHOW_LINES = 14;
-	private float REMOVAL_ISLAND_FINDER = 12;
+	private float CURRENT_CUTOFF = 0.5f;
+	private float SHOW_LINES = 0.5f;
+	private float REMOVAL_ISLAND_FINDER = 0.5f;
 
 	/** PHYSICS VARIABLES **/
 
@@ -1165,7 +1278,12 @@ public class DGraph extends PApplet {
 		public void dedicate() {
 			CURRENT_CUTOFF = PApplet.parseFloat(areas[0].getText());
 			SHOW_LINES = PApplet.parseFloat(areas[1].getText());
-			REMOVAL_ISLAND_FINDER = PApplet.parseFloat(areas[2].getText());
+			float newRemovalIslandFinder = PApplet.parseFloat(areas[2].getText());
+			boolean needsNewIsolatedNodes = newRemovalIslandFinder != REMOVAL_ISLAND_FINDER;
+			REMOVAL_ISLAND_FINDER = newRemovalIslandFinder;
+			if (needsNewIsolatedNodes) {
+				removeIsolatedNodes();
+			}
 		}
 	}
 	public void newPhysicsVariables() {
@@ -1200,9 +1318,6 @@ public class DGraph extends PApplet {
 			return toRet;
 		}
 		public void mark(float ox, float oy, float r) {
-			//Include 1 pixel of border:
-			r+=1;
-
 			int maxX = (int)(ox + r + 1);
 			int maxY = (int)(oy + r + 1);
 			float rs = r * r;
@@ -1226,7 +1341,7 @@ public class DGraph extends PApplet {
 		float vel [] = new float[2];
 		float pos [] = new float[2];
 		float[] distances;
-		boolean display;
+		boolean display = true;
 		int shadeColor = -1;
 		int nodeConnection = -1;
 		String FastaLabel;
@@ -1278,9 +1393,6 @@ public class DGraph extends PApplet {
 			float cx=0, cy=0;
 
 			fill(0);
-			textFont(txt);
-			textSize(txtFontSizeSmall * txtFontSizeScaling);
-			textAlign(CENTER, CENTER);
 			translate(offx, offy);
 
 
@@ -1292,37 +1404,46 @@ public class DGraph extends PApplet {
 				return;
 			}
 
+			//Label will be placed distance r away, at some angle, in a circle of radius circleSize
+			float circleSize = 10*UIScaling;
+			float r = max(25*UIScaling, NodeDotSize + 5);
+			//Try a random sweep around the circle 
+			int anglesToTest = 20;
 			//Default to an angle that's away from the center of the picture (which is at 0,0)
 			float angle0 = atan2(offy, offx);
-			//Try multiple angles for the label ray until we find one that doesn't conflict with other labels
-			float angleDelta = TWO_PI / 10;
-			//Label will be placed distance r away, at some angle, in a circle of radius circleR
-			float circleR = 20;
-			float r = max(25, NodeDotSize + 5);
-			for (float angle = angle0; angle < angle0+TWO_PI; angle += angleDelta) {
+			for(int i = 0; i <= anglesToTest; i++) {
 				boolean canDraw = true;
-
-				//Angles close to horizontal are ugly, and lead to unreadable labels when showing sequence
-				//as these overflow the "circleR" space at the label. So avoid that:
-				float horizThreshold = TWO_PI/20;
-				if (abs(angle + horizThreshold) % PI < horizThreshold * 2) {
-					canDraw = false;
-				}
-
-				//Check drawability slightly to the left and right of the proposed label position
-				if (!labelPlanner.canDrawAt(cx + r*cos(angle) - circleR, cy + r*sin(angle))) {
-					canDraw = false;
-				}
-				if (!labelPlanner.canDrawAt(cx + r*cos(angle) + circleR, cy + r*sin(angle))) {
-					canDraw = false;
-				}
-				//Check drawability on the segment connecting label to point. Can't check at the center of the ray since we want to allow
-				//labels for points radiating from the exact same spot.
-				for (float rad = max(10, NodeDotSize + 5); rad < r + circleR && canDraw; rad+= 5) {
-					float ox = rad*cos(angle);
-					float oy = rad*sin(angle);
-					if (!labelPlanner.canDrawAt(cx + ox, cy + oy)) {
+				float angle;
+				if (i == anglesToTest) {
+					//Last iteration. Use the default angle, ignore overlap.
+					//angle = angle0;
+					//Last iteration, use a seeded random angle:
+					//angle = (labelString.hashCode() % TWO_PI);
+					angle = angle0 + labelString.hashCode() % (TWO_PI / anglesToTest);
+				} else {
+					//Flip back and forth around angle0 at intervals:
+					angle = angle0 + (i % 2 == 0 ? - 1 : 1) * ((i + 1)&(~1)) * TWO_PI / anglesToTest;
+					//Angles close to horizontal are ugly, and lead to unreadable labels when showing sequence
+					//as these overflow the "circleR" space at the label. So avoid that:
+					float horizThreshold = TWO_PI/20;
+					if (abs(angle + horizThreshold) % PI < horizThreshold * 2) {
 						canDraw = false;
+					}
+					//Check drawability slightly to the left and right of the proposed label position
+					if (!labelPlanner.canDrawAt(cx + r*cos(angle) - circleSize, cy + r*sin(angle))) {
+						canDraw = false;
+					}
+					if (!labelPlanner.canDrawAt(cx + r*cos(angle) + circleSize, cy + r*sin(angle))) {
+						canDraw = false;
+					}
+					//Check drawability on the segment connecting label to point. Can't check at the center of the ray since we want to allow
+					//labels for points radiating from the exact same spot.
+					for (float rad = max(10, NodeDotSize + 5); rad < r + circleSize && canDraw; rad+= 5) {
+						float ox = rad*cos(angle);
+						float oy = rad*sin(angle);
+						if (!labelPlanner.canDrawAt(cx + ox, cy + oy)) {
+							canDraw = false;
+						}
 					}
 				}
 				if (canDraw) {
@@ -1330,15 +1451,18 @@ public class DGraph extends PApplet {
 					float oy = r*sin(angle);
 
 					stroke(0, 0, 0, 100);
-					line(0, 0, ox*((r-circleR/2)/r), oy*((r-circleR/2)/r));
+					line(0, 0, ox*((r-circleSize)/r), oy*((r-circleSize)/r));
 					fill(1, 1, 1, 40);
 					if (showLabels == SHOW_LABELS_NUMBER) {
-						ellipse(ox, oy, circleR, circleR);
+						ellipse((int)ox, (int)oy, circleSize*2, circleSize*2);
 					}
 					fill(0);
 					translate(-offx, -offy);
-					text(labelString, (int)(offx+ox), (int)(offy+oy));
-					labelPlanner.mark(cx + ox, cy + oy, circleR);
+					textFont(txt);
+					textSize(txtFontSizeSmall * UIScaling);
+					textAlign(LEFT, BOTTOM);
+					text(labelString, (int)(offx+ox-textWidth(labelString)/2), (int)(offy+oy + textAscent()/2 + textDescent()));
+					labelPlanner.mark(cx + ox, cy + oy, circleSize);
 					return;
 				}
 			}
@@ -1352,7 +1476,7 @@ public class DGraph extends PApplet {
 			colorMode(RGB, 255);
 		}
 		public boolean drawsLines() {
-			return (transparentCountdown>0 || ShowMinLines) && !wantsFrameBreak;
+			return (transparentCountdown>0 || showLines) && !wantsFrameBreak;
 		}
 		public void drawLineTo(int oth, float goodness) {
 			//called by update, but if we're in script, don't do it!
@@ -1360,7 +1484,7 @@ public class DGraph extends PApplet {
 			//Done.
 			boolean trans = transparentCountdown>0;
 			if (!trans) {
-				if (ShowMinLines && distances[oth]<SHOW_LINES) {
+				if (showLines && distances[oth]<SHOW_LINES) {
 					strokeWeight(2);
 					strokeColors(distances[oth]);
 				} 
@@ -1428,11 +1552,6 @@ public class DGraph extends PApplet {
 				}
 			}
 
-			if (!UPDATES_ON_DRAW&&!drawsLines()) {
-				return;
-			}
-
-
 			//Update position:
 			float[] dispAdd = dispAddMemorySaver; //Sigma holder
 			dispAdd[0] = 0;
@@ -1451,14 +1570,7 @@ public class DGraph extends PApplet {
 				float dispar;
 				float proximity = (compLength*(ZOOM/640.f)); //pixel to pd
 				if (distances[k]>CURRENT_CUTOFF) {
-					if (true) continue;
-					dispar = 0;
-					//If close proximity, move away.
-					/*
-        if (proximity < CURRENT_CUTOFF/2){
-         dispar = .5;
-         }
-					 */
+					continue;
 				} 
 				else {
 					//Method 1
@@ -1492,7 +1604,6 @@ public class DGraph extends PApplet {
 			//Ok, move the particle, only if we're updating:
 
 			if (UPDATES_ON_DRAW) {
-
 				addVec(vel, acc[0]*timeStep, acc[1]*timeStep); 
 				addVec(pos, vel[0]*timeStep, vel[1]*timeStep);
 				float mag = sqrt(pos[0]*pos[0]+pos[1]*pos[1]);
@@ -1544,7 +1655,7 @@ public class DGraph extends PApplet {
 			//println("You chose to open this file: " + chooser.getSelectedFile().getName());
 		}  
 		else {
-			exit();
+			System.exit(0);
 		}
 
 		// String gotString = JOptionPane.ShowInputDialog("Please input a meaningful description of this graph.");
@@ -1558,6 +1669,7 @@ public class DGraph extends PApplet {
 			e.printStackTrace();
 			die("");
 		};
+		String errorMessage = "";
 		try {
 			if (mode==0){
 				Fastize(lines); 
@@ -1599,10 +1711,17 @@ public class DGraph extends PApplet {
 				pdScoreMultisearch(lines);
 				return;
 			}
-		} 
-		finally {
+
+			if (mode==9){
+				JalviewUtil.jalviewPairwiseAlignmentScores(lines); 
+				return;
+			}
+		} catch (Throwable e) {
+			errorMessage = "Errors occurred, but ";
+			throw e;
+		} finally {
 			System.out.flush();
-			JOptionPane.showMessageDialog(frame,"O.K. The output has been stored to "+outtt);
+			JOptionPane.showMessageDialog(frame,"O.K. " + errorMessage + " the output has been stored to "+outtt);
 		}
 	}
 
@@ -1618,7 +1737,7 @@ public class DGraph extends PApplet {
 		}
 		for(int k = 0; k < lines.length; k++){
 			for(int p = 0; p < lines.length; p++){
-				float val = (float) PDScore.PDScore2(lines[p],lines[k],wSize);
+				float val = (float) PDScore.PDScoreWindowed(lines[p],lines[k],wSize);
 				System.out.print(val+" ");
 			}
 			System.out.println();
@@ -1646,7 +1765,7 @@ public class DGraph extends PApplet {
 			//println("You chose to open this file: " + chooser.getSelectedFile().getName());
 		}  
 		else {
-			exit();
+			System.exit(0);
 		}  
 		String[] shortlist = loadStrings(toRead);
 
