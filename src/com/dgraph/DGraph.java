@@ -52,7 +52,7 @@ public class DGraph extends PApplet {
 	String inputFileName;
 	String customLoc;
 	boolean headless = false;
-	boolean singleFramePdf = false;
+	int scriptRenderFrames = 0;
 	boolean SHOW_HELP_TEXT = true;
 	int VIEW_WIDTH = 800;
 	int VIEW_HEIGHT = 800;
@@ -71,7 +71,7 @@ public class DGraph extends PApplet {
 		}
 
 		doCommandLine();
-		if (singleFramePdf){
+		if (scriptRenderFrames > 0){
 			PRESETUP = true;
 		}
 		while (!PRESETUP){
@@ -167,7 +167,6 @@ public class DGraph extends PApplet {
 		if (!simStarted && !renderThisFrame) {
 			noLoop();
 		}	
-		renderThisFrame = false;
 	}
 
 	float[] shadings;
@@ -181,7 +180,7 @@ public class DGraph extends PApplet {
 
 		String toRead = null;
 		String[] commands = null;
-		if (singleFramePdf){
+		if (scriptRenderFrames > 0){
 			commands = new String[0];
 		}
 		if (commands==null){
@@ -233,6 +232,16 @@ public class DGraph extends PApplet {
 		String renderLocation = null;
 		if (renderThisFrame){
 			renderLocation = renderSaveLocationBase(); 
+			if (scriptRenderFrames > 0) {
+				if (scriptRenderFrames == 2) {
+					showLabels = SHOW_LABELS_NAME;
+					renderLocation += "-names";
+				}
+				if (scriptRenderFrames == 1) {
+					showLabels = SHOW_LABELS_NUMBER;
+					renderLocation += "-numbered";
+				}
+			}
 			beginRecord(PDF, renderLocation + ".pdf");
 			smooth();
 		}
@@ -257,8 +266,14 @@ public class DGraph extends PApplet {
 			} 
 			*/
 			save(renderLocation + ".png");
-			if (singleFramePdf){
-				System.exit(0);
+			if (scriptRenderFrames > 0) {
+				scriptRenderFrames--;
+				if (scriptRenderFrames == 0) {
+					System.exit(0);
+				}
+				//Keep going with renderThisFrame still true.
+			} else {
+				renderThisFrame = false;
 			}
 		}
 	}
@@ -405,7 +420,7 @@ public class DGraph extends PApplet {
 		if (pdfOutput){
 			renderUrl = outputDir.toString()+File.separator+filePrefix;
 			renderThisFrame = true;
-			singleFramePdf = true;
+			scriptRenderFrames = 2;
 			headless = false;
 			return;
 		}
@@ -484,7 +499,7 @@ public class DGraph extends PApplet {
 			saveNodeStates(outputDir.toString()+File.separator+filePrefix+"-best.fasta");
 			renderUrl = outputDir.toString()+File.separator+filePrefix+"-best";
 			renderThisFrame = true;
-			singleFramePdf = true;
+			scriptRenderFrames = 2;
 			headless = false;
 			return;
 		} 
@@ -1308,9 +1323,9 @@ public class DGraph extends PApplet {
 
 	/** DISTANCE VARIABLES **/
 
-	private float CURRENT_CUTOFF = 0.5f;
-	private float SHOW_LINES = 0.5f;
-	private float REMOVAL_ISLAND_FINDER = 0.5f;
+	private float CURRENT_CUTOFF = 14f;
+	private float SHOW_LINES = 14f;
+	private float REMOVAL_ISLAND_FINDER = 14f;
 
 	/** PHYSICS VARIABLES **/
 
