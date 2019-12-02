@@ -5,20 +5,24 @@ import java.awt.FileDialog;
 import java.awt.Frame;
 import java.awt.GridLayout;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Scanner;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -47,9 +51,11 @@ public class DGraph extends PApplet {
 	String toRead;
 	String inputFileName;
 	String customLoc;
-	boolean noninteractive = false;
+	boolean headless = false;
 	boolean singleFramePdf = false;
 	boolean SHOW_HELP_TEXT = true;
+	int VIEW_WIDTH = 800;
+	int VIEW_HEIGHT = 800;
 
 	public void start() {
 		//Test here if we have write priviledges
@@ -61,27 +67,27 @@ public class DGraph extends PApplet {
 		} 
 		catch (Throwable e){
 			JOptionPane.showMessageDialog(frame,"Please run from a directory that has file-write access.\n","Write-Protected Directory",JOptionPane.ERROR_MESSAGE);
-			System.exit(0);
+			System.exit(1);
 		}
 
 		doCommandLine();
 		if (singleFramePdf){
 			PRESETUP = true;
 		}
-		if (!PRESETUP){
+		while (!PRESETUP){
 			PRESETUP = true;
 			//Show a dialog with options for RUN_MODE
 			String [] optionsStr = { 
 					"Run DGraph", 
-					"Utility: Sequence list -> Fasta Format", 
-					"Utility: Fasta Format -> Sequence List", 
+					"Utility: Sequence list -> Fasta", 
+					"Utility: Fasta -> Sequence List", 
 					"Utility: Remove Duplicates from Sequence List", 
-					"Utility: Fasta Format -> List of 'Fasta Headers'",
-					"Utility: Clustalw output -> Alignment score distance matrix",
-					"Utility: Sequence List -> Neo-PD Score Matrix (Long Proteins)",
-					"Utility: Sequence List -> PD Score Matrix (Short Peptide)",
+					"Utility: Fasta -> List of headers",
+					"Utility: Clustalw output -> Alignment score distance matrix. Note: Copy+paste whole clustalw output, especially 'pairwise alignment' section",
+					"Utility: Fasta -> PD Score matrix: sliding window approach",
+					"Utility: Fasta -> PD Score matrix: assume pre-aligned sequences",
 					"Utility: DNA Fasta -> DNA Sequence Similarity matrix",
-					"Utility: Find all pairs of peptide in a list with PD Score under a threshold",
+					"Utility: Find all pairs of aligned peptides in a list with PD Score under a threshold",
 					"Utility: Jalview all pairwise sequeqnce alignments output -> Parwise alignment score list",
 			};
 			JRadioButton [] options = new JRadioButton[optionsStr.length];
@@ -96,11 +102,13 @@ public class DGraph extends PApplet {
 			options[0].setSelected(true);
 
 			Frame holder = new Frame("DGraph - Initializing.");
+			holder.setSize(200,100);
+			holder.setLocationRelativeTo(null);
 			holder.setVisible(true);
 			boolean shouldRun = JOptionPane.showOptionDialog(
 					holder,
 					pane,
-					"Welcome! What would you like to run?",
+					"Select operation",
 					JOptionPane.OK_CANCEL_OPTION,
 					JOptionPane.PLAIN_MESSAGE,null,null,null) == JOptionPane.OK_OPTION;
 			if (!shouldRun) {
@@ -116,11 +124,12 @@ public class DGraph extends PApplet {
 				}
 			}
 			RUN_MODE = choice-1; //0=-1
-		}
-
-		if (RUN_MODE != -1){
-			TestFasta(RUN_MODE);
-			System.exit(0);
+			
+			if (RUN_MODE != -1){
+				runUtility(RUN_MODE);
+				//Go again.
+				PRESETUP = false;
+			}
 		}
 		
 		//Now do PApplet's start to get things rolling.
@@ -130,7 +139,7 @@ public class DGraph extends PApplet {
 	//This is actually run on the first "frame." A call to size triggers it to be called _again_ (!)
 	public void setup() {
 		//This throws an exception and causes us to reenter once "frame" exists
-		size(800,800,P2D);
+		size(VIEW_WIDTH,VIEW_HEIGHT,P2D);
 		txt = createFont("Vera.ttf",90,true);
 		frameRate(60);
 		if (!frame.isResizable()){
@@ -150,7 +159,7 @@ public class DGraph extends PApplet {
 			setupSimulation();
 			needsSetupSimulation = false;
 		}
-		if (keyPressed && key=='p' && (System.nanoTime() - lastRenderTime) > 0.5e9){
+		if (keyPressed && key=='s' && (System.nanoTime() - lastRenderTime) > 0.5e9){
 			renderThisFrame = true;
 			lastRenderTime = System.nanoTime();
 		}
@@ -179,7 +188,7 @@ public class DGraph extends PApplet {
 			FileDialog fd = new FileDialog(frame, "Open the coloring file", FileDialog.LOAD);
 			//while ( fd.getDirectory() == null && fd.getFile() == null) 
 			//{
-			fd.show();
+			showFDRememberDirectory(fd);
 			//}
 			try {
 				File got = new File( fd.getDirectory() + File.separator + fd.getFile());
@@ -223,7 +232,7 @@ public class DGraph extends PApplet {
 	public void drawOrRecordSimulation(){
 		String renderLocation = null;
 		if (renderThisFrame){
-			renderLocation = renderUrl!=null?renderUrl:((renderDir!=null?renderDir+"/":"")+frameCount);
+			renderLocation = renderSaveLocationBase(); 
 			beginRecord(PDF, renderLocation + ".pdf");
 			smooth();
 		}
@@ -253,6 +262,18 @@ public class DGraph extends PApplet {
 			}
 		}
 	}
+	private String renderSaveLocationBase() {
+		//https://www.dotnetperls.com/filename-date-java
+		// Get a Calendar and set it to the current time.
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(Date.from(Instant.now()));
+
+        // Create a filename from a format string.
+        // ... Apply date formatting codes.
+        String datestring = String.format("%1$tY-%1$tm-%1$td-%1$tk-%1$tM-%1$tS", cal);
+		return renderUrl!=null?renderUrl:((renderDir!=null?renderDir+"/":"")+datestring);
+	}
+
 	/**
 	 * A few useful tools for automating dGraph, notably:
 	 * 
@@ -278,8 +299,13 @@ public class DGraph extends PApplet {
 		String params = System.getProperty("params");
 		String inFasta = System.getProperty("in");
 		String inCustomMatrix = System.getProperty("inCustom");
+		String distanceName = System.getProperty("distanceName");
 		String doPdf = System.getProperty("pdf");
 		String zoom = System.getProperty("zoom");
+		String UIScaling = System.getProperty("UIScaling");
+		String width = System.getProperty("width");
+		String height = System.getProperty("height");
+		String reference = System.getProperty("reference");
 		doAutomation |= numRuns!=null;
 		doAutomation |= outputDir!=null;
 		doAutomation |= filePref!=null;
@@ -315,16 +341,32 @@ public class DGraph extends PApplet {
 				filePref="dGbatch";
 			}
 			if (zoom!=null){
-				VIEW_SCALE_USER=max(1,new Integer(zoom));
+				VIEW_SCALE_USER=max(1,new Float(zoom));
+			}
+			if (UIScaling != null) {
+				this.UIScaling = max(1, new Float(UIScaling));
+			}
+			if (width != null) {
+				VIEW_WIDTH = max(1,new Integer(width));
+			}
+			if (height != null) {
+				VIEW_HEIGHT = max(1,new Integer(height));
+			}
+			if (inCustomMatrix != null) {
+				if (distanceName == null) {
+					batchError("-DdistanceName must be specified if -DinCustom used.");
+				}
+				this.distanceName = distanceName;
 			}
 			//Ok, do it.
-			runScript(new Integer(numRuns),new Integer(numIters),params,outputDir,filePref,inFasta,inCustomMatrix,doPdf!=null);
+			runScript(new Integer(numRuns),new Integer(numIters),params,outputDir,filePref,inFasta,inCustomMatrix,doPdf!=null,reference);
+		} else {
+			//If we get here, we didn't input any command line arguments.
+			System.out.println("Dgraph can be automated: try adding -Dhelp to the arguments when running the program.");
 		}
-		//If we get here, we didn't input any command line arguments.
-		System.out.println("Dgraph can be automated: try adding -Dhelp to the arguments when running the program.");
 	}
-	private void runScript(int numTimes, int numIters, String params1, String outputDirectory, String filePrefix, String inFasta, String customMatrix, boolean pdfOutput){
-		noninteractive = true; //inScript flag.
+	private void runScript(int numTimes, int numIters, String params1, String outputDirectory, String filePrefix, String inFasta, String customMatrix, boolean pdfOutput, String reference){
+		headless = true; //disable rendering while running simulation in script
 
 		File outputDir = new File(outputDirectory).getAbsoluteFile();
 		if (!outputDir.isDirectory() || !outputDir.exists()){
@@ -336,13 +378,14 @@ public class DGraph extends PApplet {
 		}
 		toRead = inFasta; //Read by clusterSimulation.
 		INPUT_MODE = 0;
+		RUN_MODE = 0;
 		if (customMatrix!=null){
 			File inputCustomMatrix = new File(customMatrix);
 			if (!inputCustomMatrix.exists()){
 				batchError("-DinCustom referred to bad/no file\n"+inputCustomMatrix);
 			}
 			customLoc = customMatrix;
-			INPUT_MODE = 1;
+			INPUT_MODE = 2;
 		}
 
 		if (params1!=null){ //Valid if just doing PDF
@@ -356,15 +399,18 @@ public class DGraph extends PApplet {
 		}
 
 		//First time, reinit.
+		needsSetupSimulation = false;
 		setupSimulation();
 
 		if (pdfOutput){
-			renderUrl = outputDir.toString()+File.separator+filePrefix+".pdf";
+			renderUrl = outputDir.toString()+File.separator+filePrefix;
+			renderThisFrame = true;
 			singleFramePdf = true;
+			headless = false;
 			return;
 		}
 
-		System.out.printf("Setup completed. Running simulations on %d nodes:",nodes.length);
+		System.out.printf("Setup completed. Running simulations on %d nodes.",nodes.length);
 		System.out.println();
 		String[] filesWrote = new String[numTimes];
 		float[] BestRuns = new float[numTimes];
@@ -378,7 +424,7 @@ public class DGraph extends PApplet {
 			filesWrote[run]=outFasta; //For analysis later.
 			BestRuns[run] = TOTAL_VARIANCE;
 			//Notify.
-			System.out.print("A");
+			System.out.print(".");
 			if (run%20==19){
 				System.out.println();
 			}
@@ -404,17 +450,24 @@ public class DGraph extends PApplet {
 			ana.println();
 			ana.println("Best run: "+bestRunIndex);
 			int numNodes = nodes.length; //Still a leftover.
-			float[][] best = new float[numNodes][2];
-			getCoordsFile(best, filesWrote[bestRunIndex]+".fasta.coords");
+			float[][] referenceCoords = new float[numNodes][2];
+			if (reference == null || reference.equals("")) {
+				getCoordsFile(referenceCoords, filesWrote[bestRunIndex]+".fasta.coords");
+			} else {
+				getCoordsFile(referenceCoords, reference);
+			}
 			float[][] otherRun = new float[numNodes][2];
 			float[][] out = new float[numNodes][2];
 			ana.println("Start of rotations:");
 			for(int run = 0; run < numTimes; run++){
-				if (run==bestRunIndex) continue; //TODO can probably remove this
+				if (reference == null || reference.equals("")) {
+					//Rotate all other runs to match run[0]
+					if (run==0) continue;
+				}
 				getCoordsFile(otherRun, filesWrote[run]+".fasta.coords");
 				//So, modify filesWrote[run] so that it's better.
 				ana.printf("%10d",run);
-				PointCloudUtil.transformToMatch2D(best, otherRun, out,  ana);
+				PointCloudUtil.transformToMatch2D(referenceCoords, otherRun, out,  ana);
 				//Ok. out holds the RMSD minimized transformed otherRun, write it out:
 				for(int k = 0; k < nodes.length; k++){
 					nodes[k].pos = out[k];
@@ -422,10 +475,23 @@ public class DGraph extends PApplet {
 				saveNodeStates(filesWrote[run]+".fasta");
 			}
 			ana.close();
+			
+			//Make an alias for best after rotation and render it:
+			getCoordsFile(out, filesWrote[bestRunIndex]+".fasta.coords");
+			for(int k = 0; k < nodes.length; k++){
+				nodes[k].pos = out[k];
+			}
+			saveNodeStates(outputDir.toString()+File.separator+filePrefix+"-best.fasta");
+			renderUrl = outputDir.toString()+File.separator+filePrefix+"-best";
+			renderThisFrame = true;
+			singleFramePdf = true;
+			headless = false;
+			return;
 		} 
 		catch (Throwable e){
 			e.printStackTrace();
 			batchError("Error in analysis:"+e.toString());
+			System.exit(1);
 		}
 		System.exit(0);
 	}
@@ -452,15 +518,23 @@ public class DGraph extends PApplet {
 		System.out.println();
 		System.out.printf(formatString,"-Dprefix","A filename prefix for all result files");
 		System.out.println();
-		System.out.printf(formatString,"-Dparams","6 numeric simulation parameters seperated by commas.\r\n\t *In the order they appear when you press 'j' in the GUI.");
+		System.out.printf(formatString,"-Dparams","6 numeric simulation parameters seperated by commas:\r\n\t Comparison cutoff\r\n\t Show line cutoff\r\n\t Island removal cutoff \r\n\t Timestep \r\n\t Fluid friction\r\n\t Mass");
 		System.out.println();
 		System.out.printf(formatString,"-Din","The fasta file to read");
 		System.out.println();
 		System.out.printf(formatString,"-DinCustom","An NxN matrix (in a text file) of distances to use");
 		System.out.println();
+		System.out.printf(formatString,"-DdistanceName","Name of the distance metric (required if inCustom set)");
+		System.out.println();
 		System.out.printf(formatString,"-Dpdf","Flag, means to open the fasta, render a pdf in the same directory, and System.exit(0).");
 		System.out.println();
-		System.out.printf(formatString,"-Dzoom","Zooming factor. Lower numbers means more zoomed in. Must be >=1.");
+		System.out.printf(formatString,"-Dzoom","Zooming factor. Higher numbers means more zoomed in. Must be >=1.");
+		System.out.println();
+		System.out.printf(formatString,"-DUIScaling","UI scaling. Bigger numbers mean larger text, etc. Must be >= 1.");
+		System.out.println();
+		System.out.printf(formatString,"-Dwidth, -Dheight", "width and height of figure in pixels (defaults to 800x800)");
+		System.out.println();
+		System.out.printf(formatString,"-Dreference", "rotate and flip the final state to best match reference coords file (defaults to match against first run)");
 		System.out.println();
 	}
 
@@ -469,10 +543,10 @@ public class DGraph extends PApplet {
 			SHOW_LABELS_NUMBER = SHOW_LABELS_NAME + 1, 
 			SHOW_LABELS_NONE = SHOW_LABELS_NUMBER + 1;
 
-	private String scoreName = "";
+	private String distanceName = "";
 	public String pickUserFile(String title) {
 		FileDialog fd = new FileDialog(frame, title, FileDialog.LOAD);
-		fd.show();
+		showFDRememberDirectory(fd);
 		if ( fd.getDirectory() != null && fd.getFile() != null) 
 		{
 			try {
@@ -577,20 +651,20 @@ public class DGraph extends PApplet {
 		if (INPUT_MODE == 1 || INPUT_MODE == 3) {
 			//Load pairwise distance list. Fill in the symmetric differences in nodes.
 			if (customLoc == null) {
-				customLoc = pickUserFile("Select " + scoreName + " matrix file");
-				scoreName = JOptionPane.showInputDialog(frame, "Enter the name of your custom score function","Jalview");
+				customLoc = pickUserFile("Select " + distanceName + " matrix file");
+				distanceName = JOptionPane.showInputDialog(frame, "Enter the name of your custom score function","Jalview");
 			}
 			loadPairwiseDistances(customLoc);
 		}
 		if (INPUT_MODE == 2 || INPUT_MODE == 4) {
 			if (customLoc == null) {
-				customLoc = pickUserFile("Select " + scoreName + " matrix file");
-				scoreName = JOptionPane.showInputDialog(frame, "Enter the name of your custom distance metric","Clustal");
+				customLoc = pickUserFile("Select " + distanceName + " matrix file");
+				distanceName = JOptionPane.showInputDialog(frame, "Enter the name of your custom distance metric","ClustalW");
 			}
 			loadCustomDistanceMatrix(customLoc);
 		}
 		//Make a directory in the same directory as toRead.
-		renderDir = toRead + "-DGraph";
+		renderDir = toRead + "-" + distanceName + "-DGraph-figures";
 		new File(renderDir).mkdir();
 		if (useColoringFile) {
 			setupShaded();
@@ -609,7 +683,7 @@ public class DGraph extends PApplet {
 				nodes[i].distances = new float[nodes.length];
 				String[] tokens = in.nextLine().trim().split("\\s+");
 				if (tokens.length != nodes.length) {
-					throw new RuntimeException("Unexpected line length: Wanted " + nodes.length + " distances.");
+					throw new RuntimeException("Unexpected line length: " + tokens.length + ". Wanted " + nodes.length + " distances.");
 				}
 				for(int j = 0; j < nodes.length; j++) {
 					nodes[i].distances[j] = new Float(tokens[j]);
@@ -685,7 +759,7 @@ public class DGraph extends PApplet {
 		} catch (Throwable e){
 			e.printStackTrace();
 			JOptionPane.showMessageDialog(frame, "Error reading distance matrix: " + e.toString(), "Error!", JOptionPane.ERROR_MESSAGE);
-			System.exit(0);
+			System.exit(1);
 		}
 	}
 	private void loadPairwiseDistances(String customLoc) {
@@ -729,51 +803,83 @@ public class DGraph extends PApplet {
 		} catch (Throwable e){
 			e.printStackTrace();
 			JOptionPane.showMessageDialog(frame, "Error reading pairwise distance list: " + e.toString(), "Error!", JOptionPane.ERROR_MESSAGE);
-			System.exit(0);
+			System.exit(1);
 		}
 	}
 	//0 window size for computing PDscore with aligned sequences
 	private void initDistancesWithPDScore(String[][] fastaInfo, int windowSize) {
-		scoreName = "PD" + (windowSize == 0 ? "" : " " + windowSize + "-window");
+		distanceName = "PD" + (windowSize == 0 ? "" : " " + windowSize + "-window");
+		
+		//Compute in parallel
+	    int threads = Runtime.getRuntime().availableProcessors();
+	    ExecutorService service = Executors.newFixedThreadPool(threads);
 
-		long lastDraw = System.nanoTime();
-		for (int k = 0; k < nodes.length; k++) {
-			float[] dist = new float[nodes.length];
-			for (int p = 0; p < nodes.length; p++) {
-				if (p==k) continue;
-				if (p < k) {
-					//Symmetry:
-					dist[p] = nodes[p].distances[k];
-					continue;
-				}
-				if (windowSize == 0) {
-					if (fastaInfo[1][p].length() != fastaInfo[1][k].length()) {
-						System.err.println("WARNING: PDscore computation assumed aligned inputs, but " + fastaInfo[0][p] +", " +fastaInfo[0][k] +" have different lengths.");
-					
-					}
-					dist[p]=(float)PDScore.PDScore(fastaInfo[1][p], fastaInfo[1][k]);
-				} else {
-					if (fastaInfo[1][k].contains("-")) {
-						System.err.println("Warning: Sequence " + fastaInfo[0][k] + " contains dashes, windows PDscore is best used on raw sequence (no dashes)");
-					}
-					dist[p]=(float)PDScore.PDScoreWindowed(fastaInfo[1][p], fastaInfo[1][k], windowSize);
-				}
-			}
-			nodes[k].distances = dist;
-			//System.out.println("Processed: "+lines[k]);
-			if (!noninteractive) if ((System.nanoTime()-lastDraw)>.1e9f) {
-				lastDraw = System.nanoTime();
-				background(0);
-				fill(255);
-				textFont(txt);
-				textAlign(LEFT, TOP);
-				textSize(txtFontSizeMedium * UIScaling);
-				text("Calculating PDscores:"+nf((k/(float)nodes.length)*100, 0, 2)+"%", 5, 5);
-				g.endDraw();
-				repaint();
-				g.beginDraw();
-			}
-		}
+		final long[] lastDraw = new long[] {0};
+		final int totalDistances = nodes.length * (nodes.length - 1) / 2;
+		final int[] distancesComplete = new int[] {0};
+		
+	    for (int _i = 0; _i < nodes.length; _i++) {
+	    	final Integer i = _i;
+	        Runnable callable = new Runnable() {
+	            public void run() {
+	            	int k = i;
+
+	    			float[] dist = new float[nodes.length];
+	    			for (int p = 0; p < nodes.length; p++) {
+	    				if ((System.nanoTime()-lastDraw[0])>.5e9f) {
+	    					lastDraw[0] = System.nanoTime();
+	    					if (headless) {
+	    						System.err.println("Calculating PDscores: "+nf((distancesComplete[0]/(float)totalDistances)*100, 0, 2)+"%");
+		    				} else {
+		    					g.beginDraw();
+		    					background(0);
+		    					fill(255);
+		    					textFont(txt);
+		    					textAlign(LEFT, TOP);
+		    					textSize(txtFontSizeMedium * UIScaling);
+		    					text("Calculating PDscores: "+nf((distancesComplete[0]/(float)totalDistances)*100, 0, 2)+"%", 5, 5);
+		    					g.endDraw();
+		    					repaint();
+	    					}
+	    				}
+	    				
+	    				if (p==k) continue;
+	    				if (p < k) {
+	    					//Symmetry:
+	    					continue;
+	    				}
+	    				distancesComplete[0]++;
+	    				if (windowSize == 0) {
+	    					if (fastaInfo[1][p].length() != fastaInfo[1][k].length()) {
+	    						System.err.println("WARNING: PDscore computation assumed aligned inputs, but " + fastaInfo[0][p] +", " +fastaInfo[0][k] +" have different lengths.");
+	    					
+	    					}
+	    					dist[p]=(float)PDScore.PDScore(fastaInfo[1][p], fastaInfo[1][k]);
+	    				} else {
+	    					if (fastaInfo[1][k].contains("-")) {
+	    						System.err.println("Warning: Sequence " + fastaInfo[0][k] + " contains dashes, windows PDscore is best used on raw sequence (no dashes)");
+	    					}
+	    					dist[p]=(float)PDScore.PDScoreWindowed(fastaInfo[1][p], fastaInfo[1][k], windowSize);
+	    				}
+	    			}
+	    			nodes[k].distances = dist;
+	            }
+	        };
+	        service.execute(callable);
+	    }
+
+	    service.shutdown();
+	    try {
+	    	service.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+	    } catch (InterruptedException e) {
+	    	System.exit(1);
+	    }
+	    //Handle symmetry:
+	    for(int k = 0; k < nodes.length; k++) {
+	    	for(int p = 0; p < k; p++) {
+	    		nodes[k].distances[p] = nodes[p].distances[k];
+	    	}
+	    }
 	}
 	private void removeIsolatedNodes() {
 		removed = "";
@@ -815,28 +921,28 @@ public class DGraph extends PApplet {
 				String[] pos = nodes[k].FastaLabel.substring(hashCoords+hashCoordText.length()).split(","); //Split on comma for x,y
 				nodes[k].pos[0] = new Float(pos[0]);
 				nodes[k].pos[1] = new Float(pos[1]); 
-				float PIX_TO_PD_FACTOR = (ZOOM/640.f);
-				nodes[k].pos[0]/=PIX_TO_PD_FACTOR;
-				nodes[k].pos[1]/=PIX_TO_PD_FACTOR;
 				nodes[k].FastaLabel = nodes[k].FastaLabel.substring(0, hashCoords).trim(); //The "Real" header, remove trailing leading whitespace.
 				//System.out.printf("Initial position: %s (%.3f,%.3f)",nodes[k].FastaLabel,nodes[k].pos[0],nodes[k].pos[1]);
 				//System.out.println();
 			}
 		}
-
-
 	}
-	private String[][] loadFasta(String toRead) {
-		String[] lines = loadStrings(toRead);
+
+	private String[][] _loadFasta(String[] fastaLines) {
 		String[][] fastaInfo = null;
 		try {
-			fastaInfo = unFastaSuper(lines);
+			fastaInfo = unFastaSuper(fastaLines);
 		} catch (Throwable e) {
 			e.printStackTrace();
 			JOptionPane.showMessageDialog(frame, "Error reading fasta file: " + e.toString(), "Error!", JOptionPane.ERROR_MESSAGE);
-			System.exit(0);
+			System.exit(1);
 		}
 		return fastaInfo;
+	}
+	
+	private String[][] loadFasta(String toRead) {
+		String[] lines = loadStrings(toRead);
+		return _loadFasta(lines);
 	}
 
 	public void scatterNode(Node got) {
@@ -857,11 +963,10 @@ public class DGraph extends PApplet {
 	}
 	public void strokeColors(float val) {
 		float var = constrain(val/SHOW_LINES, 0, 1);
-		float amtRed = pow(constrain(-2*var+1+.4f, 0, 1), 2);
-		float amtYello = constrain(1-3*abs(var-.3f), 0, 1);
-		float amtBlue = sqrt(constrain(-1.5f*(1-var)+1, 0, 1));
-		int c = lerpColor(lerpColor(color(0, 0, 255), color(0, 170, 40), (1-amtRed)), color(255, 255, 152), amtBlue);
-		stroke(lerpColor(c, color(255, 255, 255), var*.5f));
+		float amtBlue = pow(constrain(-2*var+1+.4f, 0, 1), 2);
+		float amtCream = sqrt(constrain(-1.5f*(1-var)+1, 0, 1));
+		int c = lerpColor(lerpColor(color(100, 100, 255) /*light blue*/, color(100, 170, 100) /*faded green*/, (1-amtBlue)), color(255, 255, 152) /*cream*/, amtCream);
+		stroke(lerpColor(c, color(255, 255, 255) /*white*/, var*.5f));
 	}
 	private Node[] nodes;
 	private float TOTAL_VARIANCE;
@@ -869,7 +974,7 @@ public class DGraph extends PApplet {
 	private final float ZOOM = 50; //ZOOM effects the scaling of the position integration; it used to be determined by screen coords ...
 	private float VIEW_SCALE = -1; //Updated from VIEW_SCALE_USER
 	private float VIEW_SCALE_USER = 25;
-	private int showLabels = SHOW_LABELS_NONE; 
+	private int showLabels = SHOW_LABELS_NUMBER; 
 	private boolean showLines = true;
 	private int NodeDotSize = 3; //rectangle of this radius at each node
 	private String underMouse;
@@ -877,10 +982,10 @@ public class DGraph extends PApplet {
 
 	private boolean UPDATES_ON_DRAW = true; //Normally true, but set to false on the first frame in the GUI.
 	private boolean wantsFrameBreak = false;
-	private boolean simStarted = false;
+	private boolean simStarted = true;
 	public void drawSimulation(boolean controlInfo) {
 		background(255);
-		UPDATES_ON_DRAW = simStarted; //GUI uses this so the user can just look at it for a second.
+		UPDATES_ON_DRAW = simStarted;
 		underMouse = "";
 		textFont(txt);
 		textSize(txtFontSizeMedium * UIScaling);
@@ -911,19 +1016,18 @@ public class DGraph extends PApplet {
 			if (SHOW_HELP_TEXT) {
 				sw = new StringWriter(); pw = new PrintWriter(sw);
 				pw.println("'h' to hide/show this help");
+				pw.println("'s' save figure (.PDF & .PNG)");
+				pw.println("'m' save figure (.COORDS)");
 				pw.println("'l' to switch on/off lines");
 				pw.println("'c' to turn off labels");
-				pw.println("'s' to show sequence numbering");
+				pw.println("'n' to show sequence numbering");
 				pw.println("'a' to show sequences");
 				pw.println("'b' to show sequence headers");
-				pw.println("'9' zooms out");
-				pw.println("'0' zooms in");
-				pw.println("'m' saves the current state");
-				pw.println("'p' renders current state");
+				pw.println("'9','0' zooms out, in");
+				pw.println("'7','8' makes text bigger, smaller");
 				pw.println("'j' sets the physics options");
-				pw.println("'d' disable nodes");
-				pw.println("'w' increases dot-size");
-				pw.println("'q' decreases dot-size");
+				pw.println("'d' delete nodes under mouse");
+				pw.println("'q', 'w' make dots bigger, smaller");
 				pw.println("'e' to scatters the points.");
 				pw.println("'y' to pause/resume.");
 
@@ -935,7 +1039,7 @@ public class DGraph extends PApplet {
 		if (true) {
 			fill(0);
 			textAlign(LEFT, BOTTOM);
-			text(scoreName+" distance", 20, height * 0.25f - (textAscent() + textDescent())/2 - padding);
+			text(distanceName+" distance", 20, height * 0.25f - (textAscent() + textDescent())/2 - padding);
 			beginShape(QUADS);
 			float minY = height * 0.25f;
 			float maxY = height * 0.75f;
@@ -986,7 +1090,9 @@ public class DGraph extends PApplet {
 			fill(0);
 			textSize(txtFontSizeMedium * UIScaling);
 			textAlign(LEFT, BOTTOM);
-			text("Simulation ticks:"+simulationTicks+"\nSolution \'goodness\':"+TOTAL_VARIANCE+"\nTimes smaller than random:"+RANDOM_VARIANCE/TOTAL_VARIANCE+"\nNodes under mouse:"+underMouse.substring(min(underMouse.length(), 2)), padding, height - padding);
+			text("Simulation iterations:"+simulationTicks+"\nSolution score (lower is better):"+TOTAL_VARIANCE+"\nTimes smaller than random:"+RANDOM_VARIANCE/TOTAL_VARIANCE+"\n"+
+					"Zoom: " + VIEW_SCALE_USER + ", UIScaling: " + UIScaling + "\n" +
+					"Nodes under mouse:"+underMouse.substring(min(underMouse.length(), 2)), padding, height - padding);
 			stroke(0);
 		}
 	}
@@ -1009,7 +1115,7 @@ public class DGraph extends PApplet {
 			simStarted = !simStarted;
 			return;
 		}
-		if (keyPressed && Character.toLowerCase(key)=='p') {
+		if (keyPressed && Character.toLowerCase(key)=='s') {
 			acted = System.nanoTime();
 			return;
 		}
@@ -1066,7 +1172,7 @@ public class DGraph extends PApplet {
 		}
 
 
-		if ((keyPressed && Character.toLowerCase(key)=='s')) {
+		if ((keyPressed && Character.toLowerCase(key)=='n')) {
 			acted = System.nanoTime();
 			showLabels = SHOW_LABELS_NUMBER;
 			return;
@@ -1475,12 +1581,9 @@ public class DGraph extends PApplet {
 			stroke(200+goodness/SHOW_LINES*50, 255, 255);
 			colorMode(RGB, 255);
 		}
-		public boolean drawsLines() {
-			return (transparentCountdown>0 || showLines) && !wantsFrameBreak;
-		}
 		public void drawLineTo(int oth, float goodness) {
 			//called by update, but if we're in script, don't do it!
-			if (noninteractive) return;
+			if (headless) return;
 			//Done.
 			boolean trans = transparentCountdown>0;
 			if (!trans) {
@@ -1632,10 +1735,11 @@ public class DGraph extends PApplet {
 
 
 
-	public void TestFasta(int mode){
+	public void runUtility(int whichUtility){
+		headless = true;
 
 		FileDialog fd = new FileDialog(frame, "Please select your input file", FileDialog.LOAD);
-		fd.show();
+		showFDRememberDirectory(fd);
 		File got = null;
 		String toRead = "";
 		if ( fd.getDirectory() != null && fd.getFile() != null) 
@@ -1644,7 +1748,7 @@ public class DGraph extends PApplet {
 				got = new File( fd.getDirectory() + File.separator + fd.getFile());
 				if (!got.exists()){
 					JOptionPane.showMessageDialog(frame, "You entered a nonexistant file:\n"+got);
-					TestFasta(mode);
+					runUtility(whichUtility);
 					return;
 				}
 				toRead = got.getAbsoluteFile().toString();
@@ -1657,10 +1761,23 @@ public class DGraph extends PApplet {
 		else {
 			System.exit(0);
 		}
+		
+		String[] utilitySuffixes = new String[] {
+				".fasta",
+				"-sequences.txt",
+				"-unique.txt",
+				"-headers.txt",
+				"-distsfromclustalw.txt",
+				"-distsfrompdunaligned.txt",
+				"-distsfrompdaligned.txt",
+				"-distsfromdnasimilarity.txt",
+				"-sequencesislandsremoved.txt",
+				"-distsfromjalviewpairwisealn.txt",
+		};
 
 		// String gotString = JOptionPane.ShowInputDialog("Please input a meaningful description of this graph.");
 		String[] lines = loadStrings(toRead);
-		File outtt = new File(got.toString()+".out");
+		File outtt = new File(got.toString()+utilitySuffixes[whichUtility]);
 		try {
 			outtt.createNewFile();
 			System.setOut(new PrintStream(new BufferedOutputStream(new FileOutputStream(outtt))));
@@ -1671,48 +1788,47 @@ public class DGraph extends PApplet {
 		};
 		String errorMessage = "";
 		try {
-			if (mode==0){
+			if (whichUtility==0){
 				Fastize(lines); 
 				return;
 			}
-			if (mode==1){
+			if (whichUtility==1){
 				unFasta(lines,false); 
 				return;
 			}
-			if (mode==2){
+			if (whichUtility==2){
 				removeDuplicates(lines); 
 				return;
 			}
-			if (mode==3){
+			if (whichUtility==3){
 				unFasta(lines,true); 
 				return;
 			}
-			if (mode==4){
+			if (whichUtility==4){
 				ClustalwUtil.clustalwAnalyze(lines); 
 				return;
 			}
-			if (mode==5){
-
+			if (whichUtility==5){
 				pdScore2Mat(lines);
 				return;
 			}
 
-			if (mode==6){
-				PDScore.pdScoreMat(lines);
+			if (whichUtility==6){
+				pdScoreMat(lines);
 				return;
 			}
 
-			if (mode==7){
+			if (whichUtility==7){
 				seqSimScore(lines);
 				return;
 			}
 
-			if (mode==8){
+			if (whichUtility==8){
 				pdScoreMultisearch(lines);
 				return;
 			}
 
-			if (mode==9){
+			if (whichUtility==9){
 				JalviewUtil.jalviewPairwiseAlignmentScores(lines); 
 				return;
 			}
@@ -1725,9 +1841,19 @@ public class DGraph extends PApplet {
 		}
 	}
 
+	private String fdLastDirectory = System.getProperty("user.home");
+	private void showFDRememberDirectory(FileDialog fd) {
+		fd.setDirectory(fdLastDirectory);
+		fd.show();
+		String chosenDirectory = fd.getDirectory();
+		if (chosenDirectory != null) {
+			fdLastDirectory = chosenDirectory;
+		}
+	}
+
 	public void pdScore2Mat(String[] lines){
 		int wSize = -1;
-		String input =  JOptionPane.showInputDialog(frame,"Input the Window Size(integer):");
+		String input =  JOptionPane.showInputDialog(frame,"Input the Window Size(integer):","22");
 		try {
 			wSize = new Integer(input);
 		} 
@@ -1735,10 +1861,24 @@ public class DGraph extends PApplet {
 			JOptionPane.showMessageDialog(frame,("Non integer input."),"You entered a non-integer window size.",JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		for(int k = 0; k < lines.length; k++){
-			for(int p = 0; p < lines.length; p++){
-				float val = (float) PDScore.PDScoreWindowed(lines[p],lines[k],wSize);
-				System.out.print(val+" ");
+		String[][] fastaInfo = _loadFasta(lines);
+		initNodesFromFasta(fastaInfo);
+		initDistancesWithPDScore(fastaInfo, wSize);
+		for(int k = 0; k < nodes.length; k++){
+			for(int p = 0; p < nodes.length; p++){
+				System.out.print(nodes[k].distances[p]+(p < nodes.length - 1 ? "\t" : ""));
+			}
+			System.out.println();
+		}
+	}
+
+	public void pdScoreMat(String[] lines){
+		String[][] fastaInfo = _loadFasta(lines);
+		initNodesFromFasta(fastaInfo);
+		initDistancesWithPDScore(fastaInfo, 0);
+		for(int k = 0; k < nodes.length; k++){
+			for(int p = 0; p < nodes.length; p++){
+				System.out.print(nodes[k].distances[p]+(p < nodes.length - 1 ? "\t" : ""));
 			}
 			System.out.println();
 		}
@@ -1746,7 +1886,7 @@ public class DGraph extends PApplet {
 
 	public void pdScoreMultisearch(String[] lines){
 		FileDialog fd = new FileDialog(frame, "Choose the short list of peptides (to match against)", FileDialog.LOAD);
-		fd.show();
+		showFDRememberDirectory(fd);
 		File got = null;
 		String toRead = "";
 		if ( fd.getDirectory() != null && fd.getFile() != null) 
@@ -1901,7 +2041,7 @@ public class DGraph extends PApplet {
 			if (outputFile==null){
 				//Save to file:
 				FileDialog fd = new FileDialog(frame, "Please select where you would like to save the output (Include a file extension, example: .txt!)", FileDialog.SAVE);
-				fd.show();
+				showFDRememberDirectory(fd);
 				String toRead = "";
 				if ( fd.getDirectory() != null && fd.getFile() != null) 
 				{
@@ -1933,13 +2073,11 @@ public class DGraph extends PApplet {
 
 			toRead = got.getAbsoluteFile().toString();
 
-			float PIX_TO_PD_FACTOR = (ZOOM/640.f);
-
 			try {
 				PrintWriter out = new PrintWriter(new FileWriter(got));
 				for(int k = 0; k < nodes.length; k++){
 					if (!nodes[k].display) continue;
-					out.println(">"+nodes[k].FastaLabel+" #COORDS:"+nodes[k].pos[0]*PIX_TO_PD_FACTOR+","+nodes[k].pos[1]*PIX_TO_PD_FACTOR);
+					out.println(">"+nodes[k].FastaLabel+" #COORDS:"+nodes[k].pos[0]+","+nodes[k].pos[1]);
 					String seq = nodes[k].FastaSequence;
 					for(int c = 0; c < seq.length(); c+=80){
 						out.println(seq.substring(c,min(seq.length(),c+80)));
@@ -1950,7 +2088,7 @@ public class DGraph extends PApplet {
 				out = new PrintWriter(new FileWriter(new File(toRead+".coords")));
 				for(int k = 0; k < nodes.length; k++){
 					if (!nodes[k].display) continue;
-					out.printf("%4d %-12s %8.3f %8.3f",k+1,nodes[k].FastaLabel,nodes[k].pos[0]*PIX_TO_PD_FACTOR,nodes[k].pos[1]*PIX_TO_PD_FACTOR);
+					out.printf("%4d %-12s %f %f",k+1,nodes[k].FastaLabel,nodes[k].pos[0],nodes[k].pos[1]);
 					out.println();
 				}
 				out.close();
@@ -1961,7 +2099,7 @@ public class DGraph extends PApplet {
 		} 
 		finally { 
 			//Inscript check
-			if (!noninteractive){
+			if (!headless){
 				g.endDraw();
 				frame.setSize(new Dimension(frame.getWidth()-10,frame.getHeight()-10));
 				try {
@@ -1989,7 +2127,7 @@ public class DGraph extends PApplet {
 
 		for(int k = 0; k < unFasta.size(); k++){
 			for(int p = 0; p < unFasta.size(); p++){
-				System.out.printf("%.3f ",seqSimDist((String)unFasta.get(k),(String)unFasta.get(p)));   
+				System.out.printf("%f ",seqSimDist((String)unFasta.get(k),(String)unFasta.get(p)));   
 			}
 			System.out.println();
 			System.out.flush();
@@ -2015,9 +2153,6 @@ public class DGraph extends PApplet {
 			}
 			coords[k][0] = new Float(coord[3]);
 			coords[k][1] = new Float(coord[4]);
-			float PIX_TO_PD_FACTOR = (ZOOM/640.f);
-			coords[k][0]/=PIX_TO_PD_FACTOR;
-			coords[k][1]/=PIX_TO_PD_FACTOR;
 		}
 	}
 

@@ -138,18 +138,4 @@ public class PDScore {
 		//bestMatches are in fact wSize * PDScore, so handle that here:
 		return sum / bestMatches.length / wSize;
 	}
-
-
-	public static void pdScoreMat(String[] lines){
-		for(int k = 0; k < lines.length; k++){
-			for(int p = 0; p < lines.length; p++){
-				double val = PDScore(lines[p],lines[k]);
-				System.out.printf("%.3f ",val);
-			}
-			System.out.println();
-			System.err.println(k+" out of "+lines.length);
-		}
-	}
-
-
 }
