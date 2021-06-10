@@ -89,6 +89,8 @@ public class DGraph extends PApplet {
 					"Utility: DNA Fasta -> DNA Sequence Similarity matrix",
 					"Utility: Find all pairs of aligned peptides in a list with PD Score under a threshold",
 					"Utility: Jalview all pairwise sequeqnce alignments output -> Parwise alignment score list",
+					"Utility: Reorder fasta sequences to match another file",
+					"Utility: Fasta -> Line-numbered sequence headers",
 			};
 			JRadioButton [] options = new JRadioButton[optionsStr.length];
 			ButtonGroup group = new ButtonGroup();
@@ -131,7 +133,8 @@ public class DGraph extends PApplet {
 				PRESETUP = false;
 			}
 		}
-		
+
+		headless = false;
 		//Now do PApplet's start to get things rolling.
 		super.start();
 	}
@@ -643,7 +646,7 @@ public class DGraph extends PApplet {
 				}
 			}
 			useColoringFile = useColoringFileCB.isSelected();
-			windowSize = alignedSequencePDCB.isSelected() ? 0 : (int) spinner.getValue();
+			windowSize = alignedSequencePDCB.isSelected() ? 0 : (Integer) spinner.getValue();
 		}
 
 		if (INPUT_MODE == 0 || INPUT_MODE == 1 || INPUT_MODE == 2) {
@@ -678,9 +681,11 @@ public class DGraph extends PApplet {
 			}
 			loadCustomDistanceMatrix(customLoc);
 		}
-		//Make a directory in the same directory as toRead.
-		renderDir = toRead + "-" + distanceName + "-DGraph-figures";
-		new File(renderDir).mkdir();
+		if (!headless) {
+			//Make a directory in the same directory as toRead to hold interactive screenshots
+			renderDir = toRead + "-" + distanceName + "-DGraph-figures";
+			new File(renderDir).mkdir();
+		}
 		if (useColoringFile) {
 			setupShaded();
 		}
@@ -822,7 +827,7 @@ public class DGraph extends PApplet {
 		}
 	}
 	//0 window size for computing PDscore with aligned sequences
-	private void initDistancesWithPDScore(String[][] fastaInfo, int windowSize) {
+	private void initDistancesWithPDScore(final String[][] fastaInfo, final int windowSize) {
 		distanceName = "PD" + (windowSize == 0 ? "" : " " + windowSize + "-window");
 		
 		//Compute in parallel
@@ -929,10 +934,10 @@ public class DGraph extends PApplet {
 			nodes[k].myId = k;
 			final String hashCoordText = "#COORDS:";
 			int hashCoords = nodes[k].FastaLabel.indexOf(hashCoordText);
-			if (hashCoords==-1) { //Random position
+			if (hashCoords==-1) { //No coords specified, pick a random location
 				scatterNode(nodes[k]);
 			} 
-			else { //Nonrandom position, strip the coords for the actual header.
+			else { //Coords specified, strip from the label
 				String[] pos = nodes[k].FastaLabel.substring(hashCoords+hashCoordText.length()).split(","); //Split on comma for x,y
 				nodes[k].pos[0] = new Float(pos[0]);
 				nodes[k].pos[1] = new Float(pos[1]); 
@@ -1788,6 +1793,8 @@ public class DGraph extends PApplet {
 				"-distsfromdnasimilarity.txt",
 				"-sequencesislandsremoved.txt",
 				"-distsfromjalviewpairwisealn.txt",
+				"-reordered.fasta",
+				"-seqnumbers.txt",
 		};
 
 		// String gotString = JOptionPane.ShowInputDialog("Please input a meaningful description of this graph.");
@@ -1808,7 +1815,7 @@ public class DGraph extends PApplet {
 				return;
 			}
 			if (whichUtility==1){
-				unFasta(lines,false); 
+				unFasta(lines,false,false); 
 				return;
 			}
 			if (whichUtility==2){
@@ -1816,7 +1823,7 @@ public class DGraph extends PApplet {
 				return;
 			}
 			if (whichUtility==3){
-				unFasta(lines,true); 
+				unFasta(lines,true,false); 
 				return;
 			}
 			if (whichUtility==4){
@@ -1847,9 +1854,37 @@ public class DGraph extends PApplet {
 				JalviewUtil.jalviewPairwiseAlignmentScores(lines); 
 				return;
 			}
+
+			if (whichUtility==10){
+				fd = new FileDialog(frame, "Select a fasta as the ordering reference", FileDialog.LOAD);
+				showFDRememberDirectory(fd);
+				String[] ordering_reference;
+				if ( fd.getDirectory() != null && fd.getFile() != null) 
+				{
+					got = new File( fd.getDirectory() + File.separator + fd.getFile());
+					if (!got.exists()){
+						JOptionPane.showMessageDialog(frame, "You entered a nonexistant file:\n"+got);
+						System.exit(1);
+					}
+					ordering_reference = loadStrings(got.getAbsoluteFile().toString());
+				}  
+				else {
+					//We canceled the FD - exit normally.
+					System.exit(0);
+					//Blech.
+					return;
+				}
+				
+				FastaUtil.reorderFasta(lines, ordering_reference); 
+				return;
+			}
+			if (whichUtility==11){
+				unFasta(lines,true,true); 
+				return;
+			}
 		} catch (Throwable e) {
-			errorMessage = "Errors occurred, but ";
-			throw e;
+			errorMessage = "Errors occurred: " + e.toString();
+			throw new RuntimeException(e);
 		} finally {
 			System.out.flush();
 			JOptionPane.showMessageDialog(frame,"O.K. " + errorMessage + " the output has been stored to "+outtt);
@@ -1998,19 +2033,6 @@ public class DGraph extends PApplet {
 		}
 		return toRet;
 	}
-	public void unFasta(String[] lines, boolean printHeaders){
-		ArrayList unFasta = new ArrayList();
-		ArrayList headers = new ArrayList();
-		unFasta0(unFasta,headers,lines);
-		for(int k = 0; k < unFasta.size(); k++){
-			if (printHeaders){
-				System.out.println(headers.get(k));
-			} 
-			else {
-				System.out.println(unFasta.get(k));
-			}
-		}
-	}
 	public void unFasta0(ArrayList unFasta, ArrayList headers, String[] lines){
 		String building = null;
 		for(int k = 0; k < lines.length+1; k++){
@@ -2030,6 +2052,22 @@ public class DGraph extends PApplet {
 				building += lines[k];
 			}
 		} 
+	}
+	public void unFasta(String[] lines, boolean printHeaders, boolean printNumbers){
+		ArrayList unFasta = new ArrayList();
+		ArrayList headers = new ArrayList();
+		unFasta0(unFasta,headers,lines);
+		for(int k = 0; k < unFasta.size(); k++){
+			if (printNumbers) {
+				System.out.printf("%-8d ", k+1);
+			}
+			if (printHeaders){
+				System.out.println(headers.get(k));
+			} 
+			else {
+				System.out.println(unFasta.get(k));
+			}
+		}
 	}
 	public void Fastize(String[] lines){
 		int shortFormatThresh = 15;
@@ -2103,7 +2141,7 @@ public class DGraph extends PApplet {
 				out = new PrintWriter(new FileWriter(new File(toRead+".coords")));
 				for(int k = 0; k < nodes.length; k++){
 					if (!nodes[k].display) continue;
-					out.printf("%4d %-12s %f %f",k+1,nodes[k].FastaLabel,nodes[k].pos[0],nodes[k].pos[1]);
+					out.printf("%d %f %f %s",k+1,nodes[k].pos[0],nodes[k].pos[1],nodes[k].FastaLabel);
 					out.println();
 				}
 				out.close();
@@ -2163,11 +2201,10 @@ public class DGraph extends PApplet {
 		String[] strings = loadStrings(file);
 		for(int k = 0; k < strings.length; k++){
 			String[] coord = strings[k].split("\\s+");
-			if(coord.length < 5){
-				continue;
-			}
-			coords[k][0] = new Float(coord[3]);
-			coords[k][1] = new Float(coord[4]);
+			//may not equal k since there can be islands that we don't export
+			int whichNode = new Integer(coord[0]) - 1;
+			coords[whichNode][0] = new Float(coord[1]);
+			coords[whichNode][1] = new Float(coord[2]);
 		}
 	}
 

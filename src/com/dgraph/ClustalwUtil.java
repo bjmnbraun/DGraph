@@ -1,36 +1,35 @@
 package com.dgraph;
 
-import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import processing.core.PApplet;
 
 public class ClustalwUtil {
 	public static void clustalwAnalyze(String[] lines){
-		ArrayList validLines = new ArrayList(30000);
-		int[] vals = new int[3];
+		ArrayDeque<Object[]> validLines = new ArrayDeque<Object[]>(100);
 		boolean inAlignment = false;
+		
+		Pattern pairwise_score_re = Pattern.compile("Sequences \\((\\d+):(\\d+)\\) Aligned. Score: ([\\d.]+)");
 		for(int k = 0; k < lines.length; k++){
-			if (lines[k].contains("Start of Pairwise alignments")){
+			String line = lines[k];
+			if (line.contains("Start of Pairwise alignments")){
 				inAlignment = true;
 			}
-			if (lines[k].contains("Start of Multiple Alignment")){
+			if (line.contains("Start of Multiple Alignment")){
 				inAlignment = false;
 			}
 			if (!inAlignment){
 				continue;
 			}
-			String[] doLine = lines[k].split("[^\\d]+");
-			int got = 0;
-			for(int p = 0; p < doLine.length; p++){
-				if (!doLine[p].matches("\\s*")){
-					vals[got]=new Integer(doLine[p]);
-					got++;
-					if (got==3){
-						got = 0;
-						validLines.add(vals);
-						vals = new int[3];
-					}
-				}
+			Matcher matcher = pairwise_score_re.matcher(line);
+			if (matcher.matches()) {
+				validLines.add(new Object[] {
+						Integer.parseInt(matcher.group(1)),
+						Integer.parseInt(matcher.group(2)),
+						Double.parseDouble(matcher.group(3)),
+				});
 			}
 		}
 		int Ncomp = validLines.size();
@@ -39,11 +38,10 @@ public class ClustalwUtil {
 		for(int x = 0; x < s; x++){
 			toFill[x][x]=0;
 		}
-		for(int k = 0; k < Ncomp; k++){
-			vals = (int[])validLines.get(k);
-			double value = 1/Math.max(0.001f,vals[2] * vals[2]);
-			toFill[vals[0]-1][vals[1]-1] = value;
-			toFill[vals[1]-1][vals[0]-1] = value;
+		for(Object[] row : validLines) {
+			double value = 1/Math.max(0.001f,(Double)row[2] * (Double)row[2]);
+			toFill[(Integer)row[0]-1][(Integer)row[1]-1] = value;
+			toFill[(Integer)row[1]-1][(Integer)row[0]-1] = value;
 		}
 		for(int y = 0; y < s; y++){
 			for(int x = 0; x < s; x++){

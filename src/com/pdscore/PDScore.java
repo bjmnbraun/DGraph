@@ -138,4 +138,7 @@ public class PDScore {
 		//bestMatches are in fact wSize * PDScore, so handle that here:
 		return sum / bestMatches.length / wSize;
 	}
+	public static void main(String[] args) {
+		System.out.println(PDScore0("ARNDCLKMFP","QEGHIARNDC"));
+	}
 }
