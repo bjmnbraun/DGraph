@@ -37,6 +37,5 @@ Running in a script:
 
 ### Compiling from source
 
- - Depends on core.jar, itext.jar, and pdf.jar from the Processing project.
-   - Depends on older versions of Processing, namely Processing-1.5.1.
-   - See https://processing.org/
+ - Depends on core.jar, itext.jar, and pdf.jar from Processing-1.5.1, which can be found here:
+   - https://github.com/processing/processing/releases/tag/processing-1.5.1
