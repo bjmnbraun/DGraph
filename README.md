@@ -1,5 +1,5 @@
 Running:
- - java -jar DGraph_v2.jar
+ - java -jar DGraph.jar
 
 Example usage:
  1) Make distance graph from short peptides or already-aligned sequences
@@ -32,12 +32,11 @@ How to generate input files:
 
 Running in a script:
  - Run
-   java -Dhelp -jar DGraph_v2.jar
+   java -jar DGraph.jar -Dhelp
    to see a list of batch processing options.
 
-Build dependencies:
+### Compiling from source
+
  - Depends on core.jar, itext.jar, and pdf.jar from the Processing project.
    - Depends on older versions of Processing, namely Processing-1.5.1.
    - See https://processing.org/
- - Release jars have the appropriate versions of these dependencies packaged
-   in.
